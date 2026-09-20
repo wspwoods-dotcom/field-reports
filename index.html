@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141810">
+<title>Field Reports — Greene County Conservation</title>
+<meta name="description" content="Fast field maintenance reports for Greene County Conservation staff. Prototype: everything stays on this phone.">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./assets/icon-192.png">
+<link rel="apple-touch-icon" href="./assets/icon-192.png">
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+<div id="demo-banner" class="demo-banner" hidden>
+  DEMO — fictional data for trying the app. Nothing here is real. Reset anytime in More.
+</div>
+
+<header class="app-header">
+  <div class="app-title">
+    <img class="app-logo" src="assets/greene-county-conservation-logo.jpg" alt="Greene County Conservation logo">
+    <div>
+      <h1>Field Reports</h1>
+      <p class="subtitle" id="org-subtitle">Greene County Conservation · prototype</p>
+    </div>
+  </div>
+  <div id="sync-pill" class="sync-pill" title="Prototype: reports stay on this phone. A shared backend arrives in Phase 2.">📴 <span id="sync-count">0</span> on this phone</div>
+</header>
+
+<main id="main">
+
+  <!-- REPORT -->
+  <section id="view-report" class="view">
+    <p class="view-lede">See something? Tap it, snap it, say it, send it. Thirty seconds, one hand.</p>
+    <div id="category-grid" class="category-grid"></div>
+    <p class="hint">No signal? No problem — reports save on this phone and will sync when the shared backend is added.</p>
+  </section>
+
+  <!-- BOARD -->
+  <section id="view-board" class="view" hidden>
+    <div class="filter-bar">
+      <select id="f-park" aria-label="Filter by park"></select>
+      <select id="f-priority" aria-label="Filter by priority">
+        <option value="">All priorities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="routine">Routine</option>
+        <option value="none">Not set</option>
+      </select>
+      <select id="f-status" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="reported">Reported</option>
+        <option value="triaged">Triaged</option>
+        <option value="assigned">Assigned</option>
+        <option value="fixed">Fixed</option>
+        <option value="verified">Verified closed</option>
+      </select>
+      <select id="f-sort" aria-label="Sort">
+        <option value="newest">Newest first</option>
+        <option value="priority">Priority first</option>
+        <option value="due">Due date</option>
+      </select>
+    </div>
+    <div id="board-list" class="board-list"></div>
+  </section>
+
+  <!-- MAP -->
+  <section id="view-map" class="view" hidden>
+    <p class="view-lede">Where the work is — pick an organization to swap its boundary.</p>
+    <div class="org-switch" role="group" aria-label="Organization">
+      <button class="org-btn" data-org="greene">Greene County</button>
+      <button class="org-btn" data-org="jefferson">City of Jefferson</button>
+    </div>
+    <div id="map-holder" class="map-holder"></div>
+    <p id="map-org-caption" class="hint"></p>
+    <p id="map-counts" class="hint"></p>
+    <p class="hint">Offline sketch map — boundaries are TIGER/Line 2025 overlays, not legal jurisdiction lines.</p>
+  </section>
+
+  <!-- SAVINGS -->
+  <section id="view-savings" class="view" hidden>
+    <p class="view-lede">What the crew's work is worth — industry rates vs. in-house cost.</p>
+    <div class="filter-bar">
+      <select id="s-park" aria-label="Filter by park"></select>
+      <input type="date" id="s-from" aria-label="From date">
+      <input type="date" id="s-to" aria-label="To date">
+    </div>
+    <div class="stat-cards">
+      <div class="stat-card"><span class="stat-label">Industry value</span><span class="stat-value" id="stat-industry">$0</span></div>
+      <div class="stat-card"><span class="stat-label">In-house cost</span><span class="stat-value" id="stat-inhouse">$0</span></div>
+      <div class="stat-card highlight"><span class="stat-label">County savings</span><span class="stat-value" id="stat-savings">$0</span></div>
+    </div>
+    <p class="hint">Valued per the Iowa DOT Living Roadway Trust Fund methodology: labor at wage data plus fringe, equipment at published hourly rates. Edit every rate in More → Rate table.</p>
+    <div id="savings-list" class="board-list"></div>
+    <div class="btn-row">
+      <button id="btn-csv" class="btn">⬇ Jobs CSV</button>
+      <button id="btn-json" class="btn">⬇ All data (JSON)</button>
+    </div>
+  </section>
+
+  <!-- MORE -->
+  <section id="view-more" class="view" hidden>
+    <h2>Your name</h2>
+    <div class="card">
+      <label class="field-label" for="staff-name">Shown as reporter on your reports</label>
+      <input type="text" id="staff-name" placeholder="e.g. Tanner" autocomplete="off">
+    </div>
+
+    <h2>Parks &amp; areas <span class="count-badge" id="park-count"></span></h2>
+    <div class="card">
+      <div id="park-list" class="park-list"></div>
+      <div class="add-row">
+        <input type="text" id="new-park-name" placeholder="New area name" autocomplete="off">
+        <input type="number" id="new-park-lat" placeholder="Lat (optional)" step="any">
+        <input type="number" id="new-park-lon" placeholder="Lon (optional)" step="any">
+        <button id="btn-add-park" class="btn small">Add</button>
+      </div>
+      <p class="hint">A few more areas are coming — add them here any time. Coordinates are optional; adding them improves the GPS park suggestion.</p>
+    </div>
+
+    <h2>Rate table</h2>
+    <div class="card">
+      <p class="hint">Industry rates seed from Iowa DOT's published FY2027 equipment schedule. In-house rates are your real loaded costs — edit them to match your books.</p>
+      <div id="rate-list"></div>
+      <div class="add-row">
+        <input type="text" id="new-rate-label" placeholder="Equipment name" autocomplete="off">
+        <input type="number" id="new-rate-ind" placeholder="$/hr industry" step="any" min="0">
+        <input type="number" id="new-rate-in" placeholder="$/hr in-house" step="any" min="0">
+        <button id="btn-add-rate" class="btn small">Add</button>
+      </div>
+    </div>
+
+    <h2>Data</h2>
+    <div class="card">
+      <div class="btn-row">
+        <button id="btn-reset-demo" class="btn">↺ Reset demo data</button>
+        <button id="btn-wipe" class="btn danger">🗑 Erase everything</button>
+      </div>
+      <p class="hint">Erase everything removes all reports, photos, and settings from this phone. There is no cloud copy in this prototype.</p>
+    </div>
+
+    <h2>About this prototype</h2>
+    <div class="card">
+      <p><strong>Field Reports</strong> is a working prototype for Greene County Conservation's maintenance reporting.</p>
+      <ul class="about-list">
+        <li>📴 <strong>Everything stays on this phone.</strong> There is no backend, no account, and no syncing in this prototype — that arrives in Phase 2.</li>
+        <li>📶 It works fully offline, including in dead zones. Reports save locally the moment you hit send.</li>
+        <li>🧾 Closed jobs log labor, equipment, and materials so the Savings view can show industry value vs. in-house cost.</li>
+        <li>🗺️ The park list comes from mycountyparks.com and is editable above.</li>
+      </ul>
+      <p class="hint">Prototype build 2026-09-20p1 · localStorage only · no analytics.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar" aria-label="Main">
+  <button class="tab active" data-view="view-report"><span class="tab-icon">📝</span><span>Report</span></button>
+  <button class="tab" data-view="view-board"><span class="tab-icon">📋</span><span>Board</span></button>
+  <button class="tab" data-view="view-map"><span class="tab-icon">🗺️</span><span>Map</span></button>
+  <button class="tab" data-view="view-savings"><span class="tab-icon">💰</span><span>Savings</span></button>
+  <button class="tab" data-view="view-more"><span class="tab-icon">⚙️</span><span>More</span></button>
+</nav>
+
+<!-- REPORT SHEET -->
+<div id="sheet-report" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sr-title">
+    <div class="sheet-handle"></div>
+    <h2 id="sr-title">New report</h2>
+
+    <label class="field-label" for="sr-park">Park / area</label>
+    <select id="sr-park"></select>
+    <p id="sr-park-hint" class="hint" hidden></p>
+
+    <div class="gps-row">
+      <span id="sr-gps-status" class="gps-status">📍 Locating…</span>
+      <span id="sr-gps-coords" class="gps-coords"></span>
+    </div>
+
+    <label class="field-label">Photo</label>
+    <div class="photo-row">
+      <button id="sr-photo-btn" class="btn">📷 Snap a photo</button>
+      <img id="sr-photo-preview" class="photo-preview" alt="" hidden>
+    </div>
+    <input type="file" id="sr-photo-input" class="hidden-file" accept="image/*">
+
+    <label class="field-label" for="sr-notes">Notes</label>
+    <div class="notes-row">
+      <textarea id="sr-notes" rows="3" placeholder="What needs doing?"></textarea>
+      <button id="sr-mic" class="btn mic" aria-label="Dictate notes">🎤</button>
+    </div>
+    <p id="sr-mic-status" class="hint" hidden></p>
+
+    <label class="urgent-toggle"><input type="checkbox" id="sr-urgent"> <span>🚨 Flag as urgent — needs attention now</span></label>
+
+    <div class="btn-row">
+      <button id="sr-cancel" class="btn ghost">Cancel</button>
+      <button id="sr-send" class="btn primary">Send report</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL SHEET -->
+<div id="sheet-detail" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div id="detail-body"></div>
+    <div class="btn-row">
+      <button id="detail-close" class="btn ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="./js/orgs.js"></script>
+<script src="./js/orgmap.js"></script>
+<script src="./js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
