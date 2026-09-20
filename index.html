@@ -10,6 +10,7 @@
 <link rel="icon" href="./assets/icon-192.png">
 <link rel="apple-touch-icon" href="./assets/icon-192.png">
 <link rel="stylesheet" href="./css/styles.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body>
 
@@ -67,15 +68,16 @@
 
   <!-- MAP -->
   <section id="view-map" class="view" hidden>
-    <p class="view-lede">Where the work is — pick an organization to swap its boundary.</p>
-    <div class="org-switch" role="group" aria-label="Organization">
-      <button class="org-btn" data-org="greene">Greene County</button>
-      <button class="org-btn" data-org="jefferson">City of Jefferson</button>
+    <p class="view-lede">Where the work is — Greene County Conservation areas and report dots.</p>
+    <div class="map-wrap">
+      <div id="map-holder" class="map-holder"></div>
+      <div class="map-ctl">
+        <button id="map-locate" type="button" aria-label="Find me">◎</button>
+      </div>
     </div>
-    <div id="map-holder" class="map-holder"></div>
     <p id="map-org-caption" class="hint"></p>
     <p id="map-counts" class="hint"></p>
-    <p class="hint">Offline sketch map — boundaries are TIGER/Line 2025 overlays, not legal jurisdiction lines.</p>
+    <p class="hint">Map tiles © Esri — boundaries are TIGER/Line 2025 overlays, not legal jurisdiction lines.</p>
   </section>
 
   <!-- SAVINGS -->
@@ -91,7 +93,8 @@
       <div class="stat-card"><span class="stat-label">In-house cost</span><span class="stat-value" id="stat-inhouse">$0</span></div>
       <div class="stat-card highlight"><span class="stat-label">County savings</span><span class="stat-value" id="stat-savings">$0</span></div>
     </div>
-    <p class="hint">Valued per the Iowa DOT Living Roadway Trust Fund methodology: labor at wage data plus fringe, equipment at published hourly rates. Edit every rate in More → Rate table.</p>
+    <p class="hint">Valued per the Iowa DOT Living Roadway Trust Fund methodology: industry labor at published wage data plus fringe, equipment at published hourly rates. Edit rates in More → Rate table; set your crew's real wages in More → Crew wages.</p>
+    <div id="savings-crew"></div>
     <div id="savings-list" class="board-list"></div>
     <div class="btn-row">
       <button id="btn-csv" class="btn">⬇ Jobs CSV</button>
@@ -128,6 +131,17 @@
         <input type="number" id="new-rate-ind" placeholder="$/hr industry" step="any" min="0">
         <input type="number" id="new-rate-in" placeholder="$/hr in-house" step="any" min="0">
         <button id="btn-add-rate" class="btn small">Add</button>
+      </div>
+    </div>
+
+    <h2>Crew wages (admin)</h2>
+    <div class="card">
+      <p class="hint">One row per person — set each staffer's loaded hourly cost, the amount the county actually pays per hour of their time. The costing sheet then splits labor hours per person, and Savings shows the true in-house cost plus each person's total. This prototype has no logins, so anyone holding this phone can open this screen.</p>
+      <div id="crew-list"></div>
+      <div class="add-row">
+        <input type="text" id="new-crew-name" placeholder="Name" autocomplete="off">
+        <input type="number" id="new-crew-wage" placeholder="$/hr loaded cost" step="any" min="0">
+        <button id="btn-add-crew" class="btn small">Add</button>
       </div>
     </div>
 
@@ -214,6 +228,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="./js/orgs.js"></script>
 <script src="./js/orgmap.js"></script>
 <script src="./js/app.js"></script>
