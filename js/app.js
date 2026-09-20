@@ -463,7 +463,7 @@ function downscalePhoto(file) {
 }
 
 /* ---------- tabs ---------- */
-var currentView = 'view-report';
+var currentView = 'view-map';
 function showView(id) {
   currentView = id;
   document.querySelectorAll('.view').forEach(function (v) { v.hidden = v.id !== id; });
@@ -546,6 +546,9 @@ function initFieldMap(org) {
   streetL.addTo(frMap);
   L.control.layers({ 'Street': streetL, 'Satellite': satL }, null, { position: 'topright' }).addTo(frMap);
   frOverlay = L.layerGroup().addTo(frMap);
+  frMap.on('click', function (e) {
+    if (frPinArmed && e && e.latlng) frDropPin(e.latlng.lat, e.latlng.lng);
+  });
   frMap.fitBounds(fieldMapBounds(org).pad(0.08));
   frMapOrg = org.id;
 }
@@ -636,6 +639,66 @@ function frDrawYou(lat, lon) {
     MapNav.you = { lat: lat, lon: lon };
     mapDrawYou();
   }
+}
+
+/* ---------- drop-a-pin: tap 📍, then tap the map ----------
+ * Tanner 2026-09-20: drop a pin on the map and land on the category icon
+ * grid with the pin's location attached to the next report. Works on both
+ * the Leaflet map and the offline SVG fallback. */
+var frPinArmed = false;
+var frPinMarker = null;  /* Leaflet marker for the dropped pin */
+var pendingPin = null;   /* {lat, lon} — consumed by the next report sheet */
+
+function frPinButton() { return document.getElementById('map-pin'); }
+
+function frSetPinArmed(on) {
+  frPinArmed = on;
+  var b = frPinButton(); if (b) b.classList.toggle('active-mode', on);
+  if (on) toast('Tap the map to drop a pin.');
+}
+
+function frDropPin(lat, lon) {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || !isFinite(lat) || !isFinite(lon)) return;
+  frSetPinArmed(false);
+  pendingPin = { lat: lat, lon: lon };
+  if (typeof L !== 'undefined' && frMap) {
+    if (frPinMarker) { try { frPinMarker.remove(); } catch (e) {} frPinMarker = null; }
+    frPinMarker = L.marker([lat, lon], {
+      title: 'Pinned report location',
+      icon: L.divIcon({ className: 'fr-pin-div', html: '📍', iconSize: [30, 30], iconAnchor: [15, 28] })
+    }).addTo(frMap);
+  } else {
+    MapNav.pin = { lat: lat, lon: lon };
+    mapDrawPin();
+  }
+  showView('view-report');
+  toast('Pin dropped — pick the issue.');
+}
+
+function frClearPin() {
+  pendingPin = null;
+  if (frPinMarker) { try { frPinMarker.remove(); } catch (e) {} frPinMarker = null; }
+  MapNav.pin = null;
+  var old = document.getElementById('map-pin-dot');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+}
+
+/* Plot the dropped pin on the offline SVG fallback. */
+function mapDrawPin() {
+  var old = document.getElementById('map-pin-dot');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  if (!MapNav.pin || !MapNav.project) return;
+  var g = mapZoomLayer();
+  if (!g) return;
+  var p = MapNav.project(MapNav.pin.lon, MapNav.pin.lat);
+  var t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  t.setAttribute('id', 'map-pin-dot');
+  t.setAttribute('x', p[0].toFixed(1));
+  t.setAttribute('y', p[1].toFixed(1));
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('font-size', '26');
+  t.textContent = '📍';
+  g.appendChild(t);
 }
 
 /* One fresh fix from the follow-mode watch: move the dot, glide the map. */
@@ -873,7 +936,24 @@ function mapBindGestures() {
       if (pinchD0 > 0 && d > 0) mapZoomAt(pinchK0 * d / pinchD0, pinchCx, pinchCy);
     }
   });
-  function endPt(e) { delete pts[e.pointerId]; delete svg['_down_' + e.pointerId]; pinchD0 = 0; }
+  function endPt(e) {
+    var down = svg['_down_' + e.pointerId];
+    var ids = Object.keys(pts);
+    delete pts[e.pointerId]; delete svg['_down_' + e.pointerId]; pinchD0 = 0;
+    /* pin mode armed + single-finger tap (not a drag/pinch) → drop the pin */
+    if (frPinArmed && down && ids.length === 1 && MapNav.project && MapNav.project.unproject) {
+      var r = svg.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        var x = (e.clientX - r.left) * (MapNav.W / r.width);
+        var y = (e.clientY - r.top) * (MapNav.H / r.height);
+        if (Math.hypot(x - down.x, y - down.y) < 12) {
+          var mx = (x - MapNav.tx) / MapNav.k, my = (y - MapNav.ty) / MapNav.k;
+          var ll = MapNav.project.unproject(mx, my); /* [lon, lat] */
+          frDropPin(ll[1], ll[0]);
+        }
+      }
+    }
+  }
   svg.addEventListener('pointerup', endPt);
   svg.addEventListener('pointercancel', endPt);
 }
@@ -927,6 +1007,25 @@ function openReportSheet(cat) {
   document.getElementById('sr-mic-status').hidden = true;
 
   document.getElementById('sheet-report').hidden = false;
+
+  /* A map pin was dropped first — its location wins over live GPS. */
+  if (pendingPin) {
+    var pin = pendingPin; pendingPin = null;
+    sheetState.lat = pin.lat; sheetState.lon = pin.lon;
+    sheetState.accuracy = null; sheetState.gpsTried = true;
+    st.className = 'gps-status ok';
+    st.textContent = '📍 Pinned location';
+    document.getElementById('sr-gps-coords').textContent =
+      pin.lat.toFixed(5) + ', ' + pin.lon.toFixed(5);
+    var nearPin = nearestPark(pin.lat, pin.lon);
+    if (nearPin) {
+      sel.value = nearPin.park.id;
+      var hintPin = document.getElementById('sr-park-hint');
+      hintPin.textContent = 'Nearest area: ' + nearPin.park.name + ' (' + nearPin.km.toFixed(1) + ' km) — change it if that’s wrong.';
+      hintPin.hidden = false;
+    }
+    return;
+  }
 
   getGPS().then(function (g) {
     sheetState.gpsTried = true;
@@ -982,6 +1081,7 @@ function sendReport() {
   };
   Store.mutate(function (db) { db.reports.unshift(r); });
   closeReportSheet();
+  frClearPin(); /* the dropped pin served its report */
   toast(urgent ? '🚨 Urgent report saved on this phone.' : 'Report saved on this phone.');
 }
 
@@ -1594,6 +1694,11 @@ function init() {
   /* map: find-me control (Leaflet supplies its own +/− zoom) */
   document.getElementById('map-locate').addEventListener('click', mapLocateMe);
 
+  /* map: drop-a-pin — arm, then the next map tap drops the pin */
+  document.getElementById('map-pin').addEventListener('click', function () {
+    frSetPinArmed(!frPinArmed);
+  });
+
   /* report sheet */
   document.getElementById('sr-cancel').addEventListener('click', closeReportSheet);
   document.getElementById('sheet-report').addEventListener('click', function (e) {
@@ -1724,7 +1829,7 @@ function init() {
     location.reload();
   });
 
-  showView('view-report');
+  showView('view-map');
 }
 
 document.addEventListener('DOMContentLoaded', init);

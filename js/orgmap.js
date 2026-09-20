@@ -54,9 +54,14 @@ var OrgMap = (function () {
     var s = Math.min(sx, sy); // uniform scale: no distortion
     var ox = (w - (x1 - x0) * s) / 2;
     var oy = (h - (y1 - y0) * s) / 2;
-    return function (lon, lat) {
+    var proj = function (lon, lat) {
       return [ox + (lon * kx - x0) * s, oy + (y1 - lat) * s];
     };
+    /* inverse: svg map coords -> [lon, lat] (for pin-drop on the fallback) */
+    proj.unproject = function (x, y) {
+      return [(x - ox) / s / kx + bbox.minLon, y1 - (y - oy) / s];
+    };
+    return proj;
   }
 
   function escXml(s) {
