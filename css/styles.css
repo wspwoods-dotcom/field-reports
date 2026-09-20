@@ -336,7 +336,10 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   isolation: isolate; /* keep Leaflet's internal z-indexes off the tab bar */
 }
 .leaflet-container { font-family: inherit; background: #0c0f08; }
-.map-holder svg { display: block; width: 100%; height: auto; touch-action: none; }
+/* Direct-child only: the offline SVG sketch is a direct child of the holder.
+ * Leaflet's own renderer svg nests deeper (.leaflet-overlay-pane > svg) and
+ * must keep its width/height attributes or all vectors misrender. */
+.map-holder > svg { display: block; width: 100%; height: auto; touch-action: none; }
 .map-bg { fill: #10140b; }
 .map-boundary { fill: rgba(232,160,32,0.08); stroke: #e8a020; stroke-width: 2.5; }
 .map-park circle { fill: #9ecfff; stroke: #0d1008; stroke-width: 1.5; }
