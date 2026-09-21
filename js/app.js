@@ -576,10 +576,10 @@ function fieldMapBounds(org) {
   return L.latLngBounds([[b.minLat, b.minLon], [b.maxLat, b.maxLon]]);
 }
 
-/* Tanner 2026-09-20: open one zoom step closer than the full-county fit. */
+/* Tanner 2026-09-20: open at the full-county fit (he picked this exact extent
+ * on 2026-09-20 from his iPhone screenshot — boundary near the frame edges). */
 function frameCounty(org) {
   frMap.fitBounds(fieldMapBounds(org).pad(0.02));
-  frMap.setZoom(Math.min(frMap.getZoom() + 1, frMap.getMaxZoom()));
 }
 
 function initFieldMap(org) {
