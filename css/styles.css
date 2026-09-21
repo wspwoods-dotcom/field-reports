@@ -488,6 +488,20 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .savings-table th, .savings-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .savings-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
 
+/* Maintenance schedules (More view) — Tanner 2026-09-21 */
+.sched-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; font-size: 14px;
+}
+.sched-row .nm { flex: 1; min-width: 0; }
+.sched-row .nm .cat-sil { width: 24px; height: 24px; vertical-align: -5px; }
+.sched-row .sub { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.sched-row .sub .badge { font-size: 11px; padding: 1px 8px; }
+.sched-row .ctl { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+.sched-row input[type="checkbox"] { width: 28px; height: 28px; accent-color: var(--accent); }
+.sched-off { opacity: 0.55; }
+
 /* Area icon badges (Tanner 2026-09-21): dark disc + brass ring behind the
  * cream glyph so area icons read on the light street basemap and on satellite. */
 .area-badge-wrap { background: none; border: none; }
