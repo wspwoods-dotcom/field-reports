@@ -161,6 +161,53 @@
       </div>
     </div>
 
+    <h2>Maintenance schedules <span class="count-badge" id="schedule-count"></span></h2>
+    <div class="card">
+      <p class="hint">Recurring work — set it once and the app births the work order into triage when it's due. Only one open work order per schedule at a time, so it can never double up. Tap ▶ on any row to birth its work order right now. Deleting a schedule never deletes the work orders it already made.</p>
+      <div id="schedule-list" class="park-list"></div>
+      <div class="incident-form-grid">
+        <div class="full">
+          <label class="field-label" for="new-sched-title">Title</label>
+          <input type="text" id="new-sched-title" placeholder="e.g. Mow campground loop" autocomplete="off">
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-cat">Issue type</label>
+          <select id="new-sched-cat"></select>
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-park">Park / area</label>
+          <select id="new-sched-park"></select>
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-recur">Repeats</label>
+          <select id="new-sched-recur"></select>
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-days">Every N days</label>
+          <input type="number" id="new-sched-days" min="1" step="1" value="7" aria-label="Repeat every N days">
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-pri">Priority</label>
+          <select id="new-sched-pri">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="new-sched-assignee">Assignee (optional)</label>
+          <input type="text" id="new-sched-assignee" placeholder="e.g. Sam T." autocomplete="off">
+        </div>
+        <div class="full">
+          <label class="field-label" for="new-sched-notes">Notes (optional)</label>
+          <input type="text" id="new-sched-notes" placeholder="Anything the crew should know" autocomplete="off">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="btn-add-schedule" class="btn small">Add schedule</button>
+      </div>
+    </div>
+
     <h2>Data</h2>
     <div class="card">
       <div class="btn-row">
