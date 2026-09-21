@@ -547,7 +547,7 @@ function initFieldMap(org) {
   L.control.layers({ 'Street': streetL, 'Satellite': satL }, null, { position: 'topright' }).addTo(frMap);
   frOverlay = L.layerGroup().addTo(frMap);
   frMap.on('click', function (e) {
-    if (frPinArmed && e && e.latlng) frDropPin(e.latlng.lat, e.latlng.lng);
+    if (frPinArmed && e && e.latlng) frStartPlacePin(e.latlng.lat, e.latlng.lng);
   });
   frMap.fitBounds(fieldMapBounds(org).pad(0.08));
   frMapOrg = org.id;
@@ -641,46 +641,84 @@ function frDrawYou(lat, lon) {
   }
 }
 
-/* ---------- drop-a-pin: tap 📍, then tap the map ----------
- * Tanner 2026-09-20: drop a pin on the map and land on the category icon
- * grid with the pin's location attached to the next report. Works on both
- * the Leaflet map and the offline SVG fallback. */
+/* ---------- drop-a-pin, Opossum Foot style ----------
+ * Tap 📍, tap the map to drop the pin, then DRAG the pin onto the exact
+ * spot — cold or dirty hands rarely land the first tap — then "Looks right".
+ * The confirmed location rides on pendingPin into the next report sheet.
+ * On the offline SVG fallback there is no drag: tapping the map while the
+ * confirm bar is up repositions the pin. */
 var frPinArmed = false;
-var frPinMarker = null;  /* Leaflet marker for the dropped pin */
+var frPinMarker = null;  /* Leaflet placement marker (draggable) */
+var frPlacing = false;   /* confirm bar up: pin dropped, not yet confirmed */
 var pendingPin = null;   /* {lat, lon} — consumed by the next report sheet */
 
 function frPinButton() { return document.getElementById('map-pin'); }
+function frPinHint() { return document.getElementById('pin-hint'); }
+function frPlaceBar() { return document.getElementById('place-bar'); }
 
 function frSetPinArmed(on) {
   frPinArmed = on;
+  if (on) frCancelPlace(); /* arming discards any unconfirmed pin */
   var b = frPinButton(); if (b) b.classList.toggle('active-mode', on);
-  if (on) toast('Tap the map to drop a pin.');
+  var h = frPinHint(); if (h) h.classList.toggle('show', on);
 }
 
-function frDropPin(lat, lon) {
+/* Drop the placement pin and show the confirm bar. */
+function frStartPlacePin(lat, lon) {
   if (typeof lat !== 'number' || typeof lon !== 'number' || !isFinite(lat) || !isFinite(lon)) return;
   frSetPinArmed(false);
-  pendingPin = { lat: lat, lon: lon };
+  frRemovePinMarker();
+  pendingPin = null;
   if (typeof L !== 'undefined' && frMap) {
-    if (frPinMarker) { try { frPinMarker.remove(); } catch (e) {} frPinMarker = null; }
     frPinMarker = L.marker([lat, lon], {
-      title: 'Pinned report location',
+      draggable: true,
+      title: 'Drag me onto the exact spot',
       icon: L.divIcon({ className: 'fr-pin-div', html: '📍', iconSize: [30, 30], iconAnchor: [15, 28] })
     }).addTo(frMap);
+    frMap.panTo([lat, lon]);
   } else {
     MapNav.pin = { lat: lat, lon: lon };
     mapDrawPin();
   }
+  frPlacing = true;
+  var bar = frPlaceBar(); if (bar) bar.classList.add('show');
+}
+
+/* "Looks right" — confirm the pin's current spot, head to the categories. */
+function frConfirmPin() {
+  var lat = null, lon = null;
+  if (frPinMarker && frPinMarker.getLatLng) {
+    var ll = frPinMarker.getLatLng(); lat = ll.lat; lon = ll.lng;
+  } else if (MapNav.pin) { lat = MapNav.pin.lat; lon = MapNav.pin.lon; }
+  if (lat == null || lon == null) return;
+  pendingPin = { lat: lat, lon: lon };
+  frPlacing = false;
+  var bar = frPlaceBar(); if (bar) bar.classList.remove('show');
+  /* the marker stays on the map until the report is sent — a visual receipt */
   showView('view-report');
   toast('Pin dropped — pick the issue.');
 }
 
-function frClearPin() {
+/* ✕ on the confirm bar, or re-arming: throw the unconfirmed pin away. */
+function frCancelPlace() {
+  frPlacing = false;
   pendingPin = null;
+  var bar = frPlaceBar(); if (bar) bar.classList.remove('show');
+  frRemovePinMarker();
+}
+
+function frRemovePinMarker() {
   if (frPinMarker) { try { frPinMarker.remove(); } catch (e) {} frPinMarker = null; }
   MapNav.pin = null;
   var old = document.getElementById('map-pin-dot');
   if (old && old.parentNode) old.parentNode.removeChild(old);
+}
+
+function frClearPin() {
+  pendingPin = null;
+  frPlacing = false;
+  var bar = frPlaceBar(); if (bar) bar.classList.remove('show');
+  frRemovePinMarker();
 }
 
 /* Plot the dropped pin on the offline SVG fallback. */
@@ -940,8 +978,9 @@ function mapBindGestures() {
     var down = svg['_down_' + e.pointerId];
     var ids = Object.keys(pts);
     delete pts[e.pointerId]; delete svg['_down_' + e.pointerId]; pinchD0 = 0;
-    /* pin mode armed + single-finger tap (not a drag/pinch) → drop the pin */
-    if (frPinArmed && down && ids.length === 1 && MapNav.project && MapNav.project.unproject) {
+    /* single-finger tap (not a drag/pinch): drop the pin, or — while the
+     * confirm bar is up on the fallback — tap again to reposition it */
+    if (down && ids.length === 1 && (frPinArmed || frPlacing) && MapNav.project && MapNav.project.unproject) {
       var r = svg.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) {
         var x = (e.clientX - r.left) * (MapNav.W / r.width);
@@ -949,7 +988,8 @@ function mapBindGestures() {
         if (Math.hypot(x - down.x, y - down.y) < 12) {
           var mx = (x - MapNav.tx) / MapNav.k, my = (y - MapNav.ty) / MapNav.k;
           var ll = MapNav.project.unproject(mx, my); /* [lon, lat] */
-          frDropPin(ll[1], ll[0]);
+          if (frPinArmed) frStartPlacePin(ll[1], ll[0]);
+          else { MapNav.pin = { lat: ll[1], lon: ll[0] }; mapDrawPin(); }
         }
       }
     }
@@ -1011,6 +1051,7 @@ function openReportSheet(cat) {
   /* A map pin was dropped first — its location wins over live GPS. */
   if (pendingPin) {
     var pin = pendingPin; pendingPin = null;
+    sheetState.pinned = true; /* so canceling the sheet clears the pin marker */
     sheetState.lat = pin.lat; sheetState.lon = pin.lon;
     sheetState.accuracy = null; sheetState.gpsTried = true;
     st.className = 'gps-status ok';
@@ -1052,6 +1093,7 @@ function openReportSheet(cat) {
 function closeReportSheet() {
   document.getElementById('sheet-report').hidden = true;
   if (recognizing) { try { recog.stop(); } catch (e) {} }
+  if (sheetState && sheetState.pinned) frClearPin(); /* pin served no report */
   sheetState = null;
 }
 
@@ -1260,6 +1302,12 @@ function renderDetail() {
   h += '<div class="btn-row" style="margin-top:18px">';
   var next = nextStatus(r.status);
   if (next) h += '<button class="btn primary" id="d-advance">' + esc(advanceLabel(r.status)) + '</button>';
+  if (r.lat != null && r.lon != null) {
+    /* Hands the destination to the phone's Maps app: turn-by-turn + drive time
+     * from the crew member's current location. Needs cell signal to route. */
+    h += '<a class="btn" id="d-directions" href="https://maps.apple.com/?daddr=' +
+         r.lat.toFixed(6) + ',' + r.lon.toFixed(6) + '">🧭 Directions</a>';
+  }
   h += '<button class="btn danger" id="d-delete">Delete</button>';
   h += '</div>';
 
@@ -1698,6 +1746,8 @@ function init() {
   document.getElementById('map-pin').addEventListener('click', function () {
     frSetPinArmed(!frPinArmed);
   });
+  document.getElementById('btn-place-ok').addEventListener('click', frConfirmPin);
+  document.getElementById('btn-place-cancel').addEventListener('click', frCancelPlace);
 
   /* report sheet */
   document.getElementById('sr-cancel').addEventListener('click', closeReportSheet);
