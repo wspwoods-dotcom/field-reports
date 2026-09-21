@@ -44,9 +44,9 @@
       <select id="f-park" aria-label="Filter by park"></select>
       <select id="f-priority" aria-label="Filter by priority">
         <option value="">All priorities</option>
-        <option value="critical">Critical</option>
         <option value="high">High</option>
-        <option value="routine">Routine</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
         <option value="none">Not set</option>
       </select>
       <select id="f-status" aria-label="Filter by status">
@@ -206,7 +206,12 @@
     </div>
     <p id="sr-mic-status" class="hint" hidden></p>
 
-    <label class="urgent-toggle"><input type="checkbox" id="sr-urgent"> <span>🚨 Flag as urgent — needs attention now</span></label>
+    <label class="field-label">Priority <span class="req">*</span></label>
+    <div class="sr-pri-row" id="sr-pri-row" role="radiogroup" aria-label="Priority">
+      <button type="button" class="sr-pri-btn" data-pri="low"><span class="dot"></span>Low</button>
+      <button type="button" class="sr-pri-btn" data-pri="medium"><span class="dot"></span>Medium</button>
+      <button type="button" class="sr-pri-btn" data-pri="high"><span class="dot"></span>High</button>
+    </div>
 
     <div class="btn-row">
       <button id="sr-cancel" class="btn ghost">Cancel</button>
