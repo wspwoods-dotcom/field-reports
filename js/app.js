@@ -253,6 +253,9 @@ var Store = {
     if (Array.isArray(DB.reports)) {
       DB.reports.forEach(function (r) { if (r.incidentId === undefined) r.incidentId = ''; });
     }
+    /* 2026-09-21: PM scheduling — older DBs lack the schedule table. */
+    if (!Array.isArray(DB.schedules)) DB.schedules = [];
+    if (DB.pmLastRun === undefined) DB.pmLastRun = '';
     /* 2026-09-20: priorities renamed routine/high/critical -> low/medium/high.
      * Map legacy values so existing reports keep their rank — never drop one. */
     var PRI_LEGACY = { routine: 'low', high: 'medium', critical: 'high' };
@@ -371,6 +374,155 @@ function seedDemo() {
   ];
   DB.parks = JSON.parse(JSON.stringify(DEFAULT_PARKS));
   DB.rates = JSON.parse(JSON.stringify(DEFAULT_RATES));
+  /* PM demo schedules — all OFF, so a fresh install shows the feature in
+   * More without birthing anything into a real crew's queue. Follow the
+   * demo-report convention: demo:true, fictional everything. */
+  DB.schedules = [
+    { id: uid(), title: 'Mow campground loop', category: 'mowing',
+      parkId: 'p-trailside', recurrence: 'weekly', intervalDays: 7,
+      priority: 'low', assignee: '', notes: 'Demo schedule — switched off.',
+      enabled: false, demo: true, lastRunAt: null, nextDue: null },
+    { id: uid(), title: 'Inspect playground equipment', category: 'facility',
+      parkId: 'p-squirrel', recurrence: 'monthly', intervalDays: 30,
+      priority: 'medium', assignee: '', notes: 'Demo schedule — switched off.',
+      enabled: false, demo: true, lastRunAt: null, nextDue: null },
+    { id: uid(), title: 'Winterize drinking fountains', category: 'facility',
+      parkId: 'p-spring', recurrence: 'seasonal', intervalDays: 90,
+      priority: 'low', assignee: '', notes: 'Demo schedule — switched off.',
+      enabled: false, demo: true, lastRunAt: null, nextDue: null }
+  ];
+}
+
+/* ---------- preventive maintenance (PM) scheduling ----------
+ * Tanner 2026-09-21: recurring work ("mow Kelso weekly", "inspect the
+ * playground monthly") should birth its own work orders when due, landing
+ * in triage like any other report. Offline-first and localStorage-only:
+ * the scheduler runs on app load and whenever the app becomes visible on
+ * a new day. No backend, no accounts, no network calls.
+ *
+ * DB.schedules[] entry:
+ *   { id, title, category, parkId, recurrence, intervalDays, priority,
+ *     assignee, notes, enabled, demo, lastRunAt, nextDue }
+ * A generated report carries source:'pm' and scheduleId, status 'reported',
+ * and behaves like a normal report afterward (triage, assign, cost, verify).
+ * One open instance per schedule at a time — the scheduler never creates
+ * a second while the first is still unverified, so it can never duplicate.
+ */
+var PM_RECURRENCE = [
+  { id: 'weekly',   label: 'Weekly',              days: 7 },
+  { id: 'biweekly', label: 'Every 2 weeks',       days: 14 },
+  { id: 'monthly',  label: 'Monthly',             days: 30 },
+  { id: 'seasonal', label: 'Seasonal (3 months)', days: 90 },
+  { id: 'yearly',   label: 'Yearly',              days: 365 },
+  { id: 'custom',   label: 'Custom…',             days: 0 }
+];
+function pmPresetById(id) {
+  for (var i = 0; i < PM_RECURRENCE.length; i++) if (PM_RECURRENCE[i].id === id) return PM_RECURRENCE[i];
+  return null;
+}
+/* Add whole days to a YYYY-MM-DD date, returning YYYY-MM-DD. */
+function isoAddDays(iso, days) {
+  var d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+function todayISO() { return isoTodayPlus(0); }
+function recurrenceLabel(s) {
+  var p = pmPresetById(s.recurrence);
+  if (p && p.id !== 'custom' && p.days === s.intervalDays) return p.label;
+  return 'Every ' + s.intervalDays + ' day' + (s.intervalDays === 1 ? '' : 's');
+}
+function schedById(id) {
+  if (!Array.isArray(DB.schedules)) return null;
+  for (var i = 0; i < DB.schedules.length; i++) if (DB.schedules[i].id === id) return DB.schedules[i];
+  return null;
+}
+/* Open (not yet verified closed) instance for a schedule — at most one. */
+function pmOpenInstance(scheduleId) {
+  for (var i = 0; i < DB.reports.length; i++) {
+    var r = DB.reports[i];
+    if (r.scheduleId === scheduleId && r.status !== 'verified') return r;
+  }
+  return null;
+}
+/* Normalize one schedule record (older installs / hand edits). */
+function pmNormalize(s) {
+  if (s.intervalDays == null || !(s.intervalDays > 0)) {
+    var p = pmPresetById(s.recurrence);
+    s.intervalDays = (p && p.days) || 30;
+    if (!s.recurrence || s.recurrence === 'custom') s.recurrence = p ? p.id : 'monthly';
+  }
+  s.intervalDays = Math.max(1, Math.round(s.intervalDays));
+  if (!PRIORITIES[s.priority]) s.priority = 'low';
+  s.enabled = s.enabled !== false;
+  s.demo = !!s.demo;
+  s.assignee = s.assignee || '';
+  s.notes = s.notes || '';
+  return s;
+}
+/* Build the work order a schedule births. Mirrors sendReport()'s shape so
+ * PM reports triage, cost, and verify exactly like field reports. */
+function pmBuildReport(s) {
+  var cat = catById(s.category);
+  var park = parkById(s.parkId);
+  var due = s.nextDue || todayISO();
+  return {
+    id: uid(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    reporter: DB.staffName || 'Crew member',
+    category: s.category,
+    note: '🔁 Scheduled ' + recurrenceLabel(s).toLowerCase() + ': ' + s.title +
+          (s.notes ? ' — ' + s.notes : ''),
+    parkId: s.parkId,
+    lat: park ? park.lat : null,
+    lon: park ? park.lon : null,
+    gpsAccuracy: null,
+    photo: null,
+    crewUrgent: s.priority === 'high',
+    priority: s.priority,
+    tools: (cat.tools || []).slice(),
+    status: 'reported',
+    assignee: s.assignee || '',
+    dueDate: due,
+    costing: null,
+    incidentId: '', /* scheduled upkeep is never incident work — never auto-tag */
+    syncState: 'local',
+    demo: !!s.demo,
+    source: 'pm',
+    scheduleId: s.id
+  };
+}
+/* The scheduler. Idempotent: due-date arithmetic plus the one-open-instance
+ * rule mean repeated runs can never duplicate. Runs on app load and when
+ * the app becomes visible on a new day (the offline-first "daily"). */
+function runPmScheduler() {
+  if (!Array.isArray(DB.schedules)) DB.schedules = [];
+  var today = todayISO();
+  var created = 0;
+  DB.schedules.forEach(function (s) {
+    pmNormalize(s);
+    if (!s.enabled) return;
+    if (!s.nextDue) {
+      /* New schedule: first instance falls due one full interval out, so
+       * creating a schedule never floods the queue the same day. */
+      s.nextDue = isoAddDays(today, s.intervalDays);
+      s.lastRunAt = Date.now();
+      return;
+    }
+    if (s.nextDue > today) return;
+    if (pmOpenInstance(s.id)) return; /* one open instance at a time */
+    DB.reports.unshift(pmBuildReport(s));
+    s.nextDue = isoAddDays(today, s.intervalDays);
+    s.lastRunAt = Date.now();
+    created++;
+  });
+  DB.pmLastRun = today;
+  Store.save();
+  Sync.enqueueDirty();
+  return created;
 }
 
 /* ---------- costing ---------- */
@@ -1426,6 +1578,11 @@ function priBadge(r) {
   if (r.crewUrgent) return '<span class="badge high">Crew flagged urgent</span>';
   return '<span class="badge">Priority not set</span>';
 }
+/* PM-born work orders carry a scheduled badge so the crew can tell them
+ * from field-filed reports at a glance. */
+function pmBadge(r) {
+  return r.source === 'pm' ? '<span class="badge status">🔁 scheduled</span>' : '';
+}
 
 function renderBoard() {
   fillFilterParks(document.getElementById('f-park'));
@@ -1453,6 +1610,7 @@ function renderBoard() {
         (r.note ? '<span class="report-note">' + esc(r.note) + '</span>' : '') +
         '<span class="badges">' + priBadge(r) + '<span class="badge status">' + STATUS_LABEL[r.status] + '</span>' +
         (r.dueDate ? '<span class="badge">Due ' + esc(r.dueDate) + '</span>' : '') +
+        pmBadge(r) +
         (r.demo ? '<span class="badge">demo</span>' : '') + '</span>' +
       '</span>';
     card.addEventListener('click', function () { openDetail(r.id); });
@@ -1498,6 +1656,7 @@ function renderDetail() {
 
   h += '<h2>' + cat.icon + ' ' + esc(cat.label) + '</h2>';
   h += '<div class="badges">' + priBadge(r) + '<span class="badge status">' + STATUS_LABEL[r.status] + '</span>' +
+       pmBadge(r) +
        (r.demo ? '<span class="badge">demo data</span>' : '') + '</div>';
   h += statusTimeline(r);
 
@@ -2400,11 +2559,106 @@ function renderMore() {
     renderCategoryGrid();
     toast('All categories switched on.');
   };
+
+  /* maintenance schedules — recurring work orders */
+  /* park select follows the live park list (areas can be added any time) */
+  (function () {
+    var sp = document.getElementById('new-sched-park');
+    var keep = sp.value;
+    sp.innerHTML = '';
+    DB.parks.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p.id; o.textContent = p.name;
+      sp.appendChild(o);
+    });
+    if (keep) sp.value = keep;
+  })();
+  document.getElementById('schedule-count').textContent =
+    (DB.schedules || []).length + ((DB.schedules || []).length === 1 ? ' schedule' : ' schedules');
+  var sl = document.getElementById('schedule-list');
+  sl.innerHTML = '';
+  if (!(DB.schedules || []).length) {
+    sl.innerHTML = '<p class="hint" style="margin:4px 0">No schedules yet — add the first one below.</p>';
+  }
+  (DB.schedules || []).forEach(function (s) {
+    pmNormalize(s);
+    var cat = catById(s.category);
+    var park = parkById(s.parkId);
+    var pri = PRIORITIES[s.priority] || PRIORITIES.low;
+    var row = document.createElement('div');
+    row.className = 'sched-row' + (s.enabled ? '' : ' sched-off');
+    row.innerHTML =
+      '<span class="nm">' + catIcon(cat) + ' <strong>' + esc(s.title) + '</strong>' +
+      '<span class="sub">' + esc(recurrenceLabel(s)) + ' · ' + esc(park ? park.name : 'Unknown area') +
+      ' · <span class="badge ' + pri.cls + '">' + pri.label + '</span>' +
+      (s.nextDue ? ' · next due ' + esc(s.nextDue) : '') +
+      (s.assignee ? ' · ' + esc(s.assignee) : '') +
+      (s.demo ? ' · demo' : '') + '</span></span>' +
+      '<span class="ctl">' +
+      '<label class="hint" style="margin:0" title="Switch schedule on or off">' +
+      '<input type="checkbox" data-sched-toggle="' + s.id + '"' + (s.enabled ? ' checked' : '') +
+      ' aria-label="Switch schedule on or off"></label>' +
+      '<button class="btn small" data-sched-run="' + s.id + '" title="Create its work order right now">▶</button>' +
+      '<button class="btn small danger" data-sched-del="' + s.id + '" aria-label="Delete schedule">✕</button>' +
+      '</span>';
+    sl.appendChild(row);
+  });
+  sl.querySelectorAll('[data-sched-toggle]').forEach(function (inp) {
+    inp.addEventListener('change', function () {
+      var id = inp.getAttribute('data-sched-toggle');
+      Store.mutate(function (db) {
+        db.schedules.forEach(function (x) {
+          if (x.id === id) {
+            x.enabled = inp.checked;
+            /* Re-enabling a schedule that never ran anchors its first due
+             * date one interval out instead of backfilling. */
+            if (x.enabled && !x.nextDue) x.nextDue = isoAddDays(todayISO(), pmNormalize(x).intervalDays);
+          }
+        });
+      });
+      renderMore();
+      toast(inp.checked ? 'Schedule switched on.' : 'Schedule switched off — no new work orders until it’s back on.');
+    });
+  });
+  sl.querySelectorAll('[data-sched-del]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-sched-del');
+      var s = schedById(id);
+      if (!confirm('Delete the “' + (s ? s.title : 'schedule') + '” schedule? Work orders it already created stay on the board.')) return;
+      Store.mutate(function (db) {
+        db.schedules = db.schedules.filter(function (x) { return x.id !== id; });
+      });
+      renderMore();
+      toast('Schedule deleted — its past work orders are untouched.');
+    });
+  });
+  /* run-now: birth this schedule's work order immediately (still honors the
+   * one-open-instance rule). For trying the feature and for doing a job early. */
+  sl.querySelectorAll('[data-sched-run]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-sched-run');
+      if (pmOpenInstance(id)) { toast('It already has an open work order — nothing created.'); return; }
+      Store.mutate(function (db) {
+        var x = null;
+        db.schedules.forEach(function (y) { if (y.id === id) x = y; });
+        if (!x) return;
+        pmNormalize(x);
+        var rpt = pmBuildReport(x);
+        rpt.dueDate = todayISO(); /* born now, due now */
+        db.reports.unshift(rpt);
+        x.nextDue = isoAddDays(todayISO(), x.intervalDays);
+        x.lastRunAt = Date.now();
+      });
+      renderMore();
+      toast('🔁 Work order created in triage.');
+    });
+  });
 }
 
 function renderAll() {
   updateSyncPill();
-  var hasDemo = DB.reports.some(function (r) { return r.demo; });
+  var hasDemo = DB.reports.some(function (r) { return r.demo; }) ||
+    (DB.schedules || []).some(function (s) { return s.demo; });
   document.getElementById('demo-banner').hidden = !hasDemo;
   if (currentView === 'view-board') renderBoard();
   if (currentView === 'view-map') renderMap();
@@ -2418,10 +2672,28 @@ function renderAll() {
 function init() {
   Store.load();
   Store.ensureOrg();
+  /* PM scheduler: births due work orders into the triage queue. Idempotent —
+   * repeated runs can never duplicate (one open instance per schedule). */
+  var pmCreated = runPmScheduler();
   renderCategoryGrid();
   updateSyncPill();
   updateOrgChrome();
-  var hasDemo = DB.reports.some(function (r) { return r.demo; });
+  /* The offline-first "daily": if the app sat open (or suspended) across
+   * midnight, re-run the scheduler when it becomes visible again. */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && DB && DB.pmLastRun !== todayISO()) {
+      var n = runPmScheduler();
+      if (n > 0) {
+        renderAll();
+        toast('🔁 ' + n + ' scheduled work order' + (n === 1 ? '' : 's') + ' created.');
+      }
+    }
+  });
+  if (pmCreated > 0) {
+    toast('🔁 ' + pmCreated + ' scheduled work order' + (pmCreated === 1 ? '' : 's') + ' created.');
+  }
+  var hasDemo = DB.reports.some(function (r) { return r.demo; }) ||
+    (DB.schedules || []).some(function (s) { return s.demo; });
   document.getElementById('demo-banner').hidden = !hasDemo;
 
   /* tabs */
@@ -2564,14 +2836,73 @@ function init() {
     toast(name + ' added at ' + fmtMoney(wage) + '/hr.');
   });
 
+  /* more: maintenance schedules — fill the form selects once (static markup,
+   * so values survive renderMore re-renders while typing) */
+  (function () {
+    var catSel = document.getElementById('new-sched-cat');
+    CATEGORIES.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c.id; o.textContent = c.icon + ' ' + c.label;
+      catSel.appendChild(o);
+    });
+    catSel.value = 'mowing';
+    var recurSel = document.getElementById('new-sched-recur');
+    PM_RECURRENCE.forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p.id; o.textContent = p.label + (p.days ? ' (' + p.days + ' days)' : '');
+      recurSel.appendChild(o);
+    });
+    recurSel.value = 'weekly';
+    var daysInp = document.getElementById('new-sched-days');
+    recurSel.addEventListener('change', function () {
+      var p = pmPresetById(recurSel.value);
+      if (p && p.days) daysInp.value = p.days;
+    });
+    document.getElementById('btn-add-schedule').addEventListener('click', function () {
+      var title = document.getElementById('new-sched-title').value.trim();
+      if (!title) { toast('⚠️ Give the schedule a title first.'); return; }
+      var days = parseInt(daysInp.value, 10);
+      if (!(days >= 1)) { toast('⚠️ "Every N days" needs to be at least 1.'); return; }
+      var parkSel = document.getElementById('new-sched-park');
+      Store.mutate(function (db) {
+        var s = pmNormalize({
+          id: uid(),
+          title: title,
+          category: catSel.value,
+          parkId: parkSel.value,
+          recurrence: recurSel.value === 'custom' ? 'custom' : recurSel.value,
+          intervalDays: days,
+          priority: document.getElementById('new-sched-pri').value,
+          assignee: document.getElementById('new-sched-assignee').value.trim(),
+          notes: document.getElementById('new-sched-notes').value.trim(),
+          enabled: true,
+          demo: false,
+          lastRunAt: null,
+          nextDue: null /* scheduler anchors the first due date one interval out */
+        });
+        /* If the day count doesn't match the named preset, it's custom. */
+        var p = pmPresetById(s.recurrence);
+        if (s.recurrence !== 'custom' && (!p || p.days !== s.intervalDays)) s.recurrence = 'custom';
+        db.schedules.push(s);
+      });
+      document.getElementById('new-sched-title').value = '';
+      document.getElementById('new-sched-assignee').value = '';
+      document.getElementById('new-sched-notes').value = '';
+      renderMore();
+      toast('Schedule added — first work order lands in triage when it’s due.');
+    });
+  })();
+
   /* more: reset demo / wipe */
   document.getElementById('btn-reset-demo').addEventListener('click', function () {
     if (!confirm('Reset demo data? Your real reports stay; the fictional demo reports are replaced.')) return;
     Store.mutate(function (db) {
       var keepReports = db.reports.filter(function (r) { return !r.demo; });
       var keepParks = db.parks, keepRates = db.rates, keepName = db.staffName, keepCrew = db.crew;
+      var keepSchedules = (db.schedules || []).filter(function (s) { return !s.demo; });
       seedDemo();
       db.reports = db.reports.concat(keepReports);
+      db.schedules = db.schedules.concat(keepSchedules);
       db.parks = keepParks;
       db.rates = keepRates;
       db.staffName = keepName;
