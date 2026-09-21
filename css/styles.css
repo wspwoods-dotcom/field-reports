@@ -88,6 +88,15 @@ body > .demo-banner, body > .app-header, body > .tabbar { flex: 0 0 auto; }
   color: var(--muted);
 }
 
+/* Emergency SOS — guarded: tap opens a confirm sheet, never dials directly */
+.sos-btn {
+  width: 52px; height: 52px; border-radius: 50%; flex: 0 0 auto;
+  background: #b3261e; color: #fff; border: 2px solid #ff8a80;
+  font-weight: 800; font-size: 15px; letter-spacing: 0.5px;
+}
+.sos-btn[hidden] { display: none; }
+.sos-call { width: 100%; font-size: 18px; padding: 16px; margin: 10px 0 4px; text-align: center; }
+
 /* Views */
 .view { padding: 14px 14px 20px; max-width: 720px; margin: 0 auto; flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .view-lede { color: var(--muted); margin: 4px 2px 14px; font-size: 15px; }
