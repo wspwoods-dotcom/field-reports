@@ -554,6 +554,100 @@ function updateOrgChrome() {
   });
   var cap = document.getElementById('map-org-caption');
   if (cap) cap.textContent = org.mapLabel + ' — TIGER/Line 2025, for overlay only (not a legal boundary).';
+  /* emergency SOS: visible only when the org has a number configured */
+  var sos = document.getElementById('sos-btn');
+  if (sos) sos.hidden = !(org.emergency && org.emergency.phone);
+}
+
+/* ---------- emergency SOS ----------
+ * Tanner 2026-09-20: guarded — tapping SOS opens a confirm sheet, never dials
+ * directly, and the iPhone's own "Call?" prompt is a second guard. The 911 row
+ * appears when the org sets emergency.show911 ("eventually 911"). */
+function openSosSheet() {
+  var org = currentOrg();
+  var em = org.emergency || {};
+  if (!em.phone) { toast('Emergency number is not set yet.'); return; }
+  var digits = String(em.phone).replace(/[^\d+]/g, '');
+  var ov = document.createElement('div');
+  ov.className = 'sheet-backdrop';
+  ov.innerHTML =
+    '<div class="sheet" role="dialog" aria-modal="true">' +
+    '<div class="sheet-handle"></div>' +
+    '<h2>🚨 Emergency call</h2>' +
+    '<p class="hint">This dials <b>' + esc(em.name || 'the ranger') + '</b> directly. Law-enforcement emergencies only.</p>' +
+    '<a class="btn danger sos-call" href="tel:' + esc(digits) + '">📞 Call ' + esc(em.name || 'now') + '</a>' +
+    (em.show911 ? '<a class="btn danger sos-call" href="tel:911">📞 Call 911</a>' : '') +
+    '<button class="btn" id="sos-cancel" style="width:100%">Cancel</button></div>';
+  document.body.appendChild(ov);
+  var close = function () { ov.remove(); };
+  ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+  document.getElementById('sos-cancel').addEventListener('click', close);
+}
+
+/* ---------- directions with dead-zone handling ----------
+ * Tanner 2026-09-20: online, the button routes current location → the logged
+ * spot as before. With no signal it prompts for a nearby start point first
+ * (defaulting to the report's own park — that's typically where the crew is),
+ * since Maps can't route from an unknown current location offline.
+ * Park coordinates ride as saddr so no geocoding — and no signal — is needed. */
+function openDirections(r) {
+  var dest = r.lat.toFixed(6) + ',' + r.lon.toFixed(6);
+  var go = function (start) {
+    window.open('https://maps.apple.com/?daddr=' + dest +
+      (start ? '&saddr=' + encodeURIComponent(start) : ''), '_blank');
+  };
+  var done = false;
+  var finish = function (online) {
+    if (done) return; done = true;
+    if (online) go(null); else showOfflineStart(r, go);
+  };
+  if (navigator.onLine === false) { finish(false); return; }
+  try {
+    /* navigator.onLine lies on iOS; probe a tiny Apple endpoint instead.
+     * Cross-origin, outside the service-worker scope — a resolve means real net. */
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, 2500);
+    fetch('https://www.apple.com/library/test/success.html', { mode: 'no-cors', signal: ctl.signal })
+      .then(function () { clearTimeout(timer); finish(true); })
+      .catch(function () { clearTimeout(timer); finish(false); });
+  } catch (e) { finish(true); }
+}
+
+function showOfflineStart(r, go) {
+  var park = parkById(r.parkId);
+  var withCoords = DB.parks.filter(function (p) { return p.lat != null && p.lon != null; });
+  var ov = document.createElement('div');
+  ov.className = 'sheet-backdrop';
+  ov.innerHTML =
+    '<div class="sheet" role="dialog" aria-modal="true">' +
+    '<div class="sheet-handle"></div>' +
+    '<h2>📵 No signal detected</h2>' +
+    '<p class="hint">Maps can\u2019t route from your current location offline. Start from a nearby spot instead — saved coordinates need no signal to look up.</p>' +
+    (park && park.lat != null ?
+      '<button class="btn primary" id="os-park" style="width:100%;margin:6px 0">📍 ' +
+      esc(park.name) + ' (this report\u2019s area)</button>' : '') +
+    '<label class="field-label" for="os-select">Another park / area</label>' +
+    '<select id="os-select">' + withCoords.map(function (p) {
+      return '<option value="' + p.lat.toFixed(6) + ',' + p.lon.toFixed(6) + '"' +
+        (park && p.id === park.id ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+    }).join('') + '</select>' +
+    '<label class="field-label" for="os-text">Or type a nearby place</label>' +
+    '<input type="text" id="os-text" placeholder="e.g. park office, Hwy 30" autocomplete="off">' +
+    '<div class="btn-row" style="margin-top:14px">' +
+    '<button class="btn primary" id="os-go">Get directions</button>' +
+    '<button class="btn" id="os-cancel">Cancel</button></div></div>';
+  document.body.appendChild(ov);
+  var close = function () { ov.remove(); };
+  ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+  var pk = document.getElementById('os-park');
+  if (pk) pk.addEventListener('click', function () {
+    var s = park.lat.toFixed(6) + ',' + park.lon.toFixed(6); close(); go(s);
+  });
+  document.getElementById('os-go').addEventListener('click', function () {
+    var t = document.getElementById('os-text').value.trim();
+    close(); go(t || document.getElementById('os-select').value);
+  });
+  document.getElementById('os-cancel').addEventListener('click', close);
 }
 /* ---------- map: Leaflet tile map (street + satellite), SVG sketch fallback ----------
  * Tanner 2026-09-20: frame on Greene County (a little beyond is fine), offer
@@ -612,6 +706,21 @@ function initFieldMap(org) {
 
 var PRI_FILL = { high: '#e05252', medium: '#e8a020', low: '#7fb069' };
 
+/* Tanner 2026-09-21: area markers are icons, not dots — swing set for parks,
+ * tree for wildlife areas, flower for prairies. The type is derived from the
+ * name so areas Tanner adds later work too, with no stored field to migrate. */
+var AREA_ICONS = {
+  park: 'assets/cats/area-park.png',
+  wildlife: 'assets/cats/area-wildlife.png',
+  prairie: 'assets/cats/area-prairie.png'
+};
+function areaType(p) {
+  var n = (p.name || '').toLowerCase();
+  if (n.indexOf('wildlife area') !== -1) return 'wildlife';
+  if (n.indexOf('prairie') !== -1) return 'prairie';
+  return 'park';
+}
+
 function refreshFieldMap(org) {
   if (!frMap || !frOverlay) return;
   if (frMapOrg !== org.id) { /* org changed -> reframe on its boundary */
@@ -623,7 +732,7 @@ function refreshFieldMap(org) {
   frOverlay.addLayer(L.geoJSON(org.boundary, {
     style: { color: '#d19a2f', weight: 2.5, opacity: 0.9, fillColor: '#d19a2f', fillOpacity: 0.06 }
   }));
-  /* park area dots */
+  /* park area icons (Tanner 2026-09-21: icons replace the dots) */
   var nParks = 0;
   /* Tanner 2026-09-21: draw the actual Raccoon River Valley Trail line, gold
    * like the boundary, instead of only a representative dot. The p-rrvt park
@@ -640,9 +749,9 @@ function refreshFieldMap(org) {
     if (p.lat == null || p.lon == null) return;
     if (showTrail && p.id === 'p-rrvt') return;
     nParks++;
-    frOverlay.addLayer(L.circleMarker([p.lat, p.lon], {
-      radius: 6, color: '#0d1008', weight: 1.5, fillColor: '#9ecfff', fillOpacity: 0.95
-    }).bindTooltip(p.name + (p.approx ? ' (approximate location)' : '')));
+    var aIcon = L.icon({ iconUrl: AREA_ICONS[areaType(p)], iconSize: [30, 30], iconAnchor: [15, 15] });
+    frOverlay.addLayer(L.marker([p.lat, p.lon], { icon: aIcon })
+      .bindTooltip(p.name + (p.approx ? ' (approximate location)' : '')));
   });
   /* report dots, colored by priority */
   var n = 0;
@@ -915,7 +1024,8 @@ function renderSvgMap() {
   updateOrgChrome();
   var org = currentOrg();
   var holder = document.getElementById('map-holder');
-  var parks = DB.parks.filter(function (p) { return p.lat != null && p.lon != null; });
+  var parks = DB.parks.filter(function (p) { return p.lat != null && p.lon != null; })
+    .map(function (p) { return { id: p.id, name: p.name, lat: p.lat, lon: p.lon, approx: p.approx, type: areaType(p) }; });
   var reports = DB.reports.map(function (r) {
     var cat = catById(r.category);
     var park = parkById(r.parkId);
@@ -1393,10 +1503,9 @@ function renderDetail() {
   var next = nextStatus(r.status);
   if (next) h += '<button class="btn primary" id="d-advance">' + esc(advanceLabel(r.status)) + '</button>';
   if (r.lat != null && r.lon != null) {
-    /* Hands the destination to the phone's Maps app: turn-by-turn + drive time
-     * from the crew member's current location. Needs cell signal to route. */
-    h += '<a class="btn" id="d-directions" href="https://maps.apple.com/?daddr=' +
-         r.lat.toFixed(6) + ',' + r.lon.toFixed(6) + '">🧭 Directions</a>';
+    /* Dead-zone aware: online it routes current location → the logged spot;
+     * offline it prompts for a nearby start point first (openDirections). */
+    h += '<button class="btn" id="d-directions">🧭 Directions</button>';
   }
   h += '<button class="btn danger" id="d-delete">Delete</button>';
   h += '</div>';
@@ -1426,6 +1535,8 @@ function renderDetail() {
   });
   var adv = document.getElementById('d-advance');
   if (adv) adv.addEventListener('click', advanceStatus);
+  var dir = document.getElementById('d-directions');
+  if (dir) dir.addEventListener('click', function () { openDirections(r); });
   document.getElementById('d-delete').addEventListener('click', function () {
     if (confirm('Delete this report? This cannot be undone.')) {
       Store.mutate(function (db) {
@@ -1854,6 +1965,9 @@ function init() {
   document.querySelectorAll('.org-btn').forEach(function (b) {
     b.addEventListener('click', function () { setOrg(b.getAttribute('data-org')); });
   });
+
+  /* emergency SOS (guarded — tap opens a confirm sheet, never dials directly) */
+  document.getElementById('sos-btn').addEventListener('click', openSosSheet);
 
   /* map: find-me control (Leaflet supplies its own +/− zoom) */
   document.getElementById('map-locate').addEventListener('click', mapLocateMe);
