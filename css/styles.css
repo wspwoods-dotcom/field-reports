@@ -472,3 +472,14 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .savings-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
 .savings-table th, .savings-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .savings-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+
+/* Area icon badges (Tanner 2026-09-21): dark disc + brass ring behind the
+ * cream glyph so area icons read on the light street basemap and on satellite. */
+.area-badge-wrap { background: none; border: none; }
+.area-badge {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #201b10; border: 2px solid #d19a2f;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.5);
+}
+.area-badge img { width: 20px; height: 20px; display: block; }
