@@ -144,6 +144,7 @@ body {
 .btn.primary { background: var(--accent); border-color: var(--accent-dark); color: #201503; }
 .btn.ghost { background: transparent; }
 .btn.danger { border-color: #7a2e2e; color: #ff9d9d; }
+a.btn { text-decoration: none; display: inline-block; text-align: center; }
 .btn.small { min-height: 44px; padding: 8px 14px; font-size: 14px; }
 .btn.mic { font-size: 22px; padding: 12px 16px; }
 .btn.mic.listening { background: var(--red); border-color: var(--red); color: #fff; }
@@ -329,6 +330,18 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .org-btn.on { background: var(--accent); border-color: var(--accent-dark); color: #141810; }
 /* Map: Leaflet tile map (SVG sketch fallback when offline) */
 .map-wrap { position: relative; }
+/* Pin-drop hint + confirm bar, Opossum Foot style */
+#pin-hint { display: none; background: var(--accent); color: var(--accent-ink);
+  font-weight: 700; text-align: center; padding: 8px 12px;
+  border-radius: var(--radius); margin-bottom: 8px; }
+#pin-hint.show { display: block; }
+#place-bar { display: none; align-items: center; justify-content: center; gap: 10px;
+  padding: 8px 10px; margin-bottom: 8px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius); font-weight: 600; }
+#place-bar.show { display: flex; }
+#place-bar .btn { min-height: 0; padding: 8px 14px; font-size: 15px; }
+.fr-pin-div { cursor: grab; }
+.fr-pin-div:active { cursor: grabbing; }
 .map-holder {
   background: var(--bg2); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden;
