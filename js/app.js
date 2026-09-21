@@ -18,15 +18,35 @@
 var DB_KEY = 'field-reports-db-v1';
 
 var CATEGORIES = [
-  { id: 'tree',    label: 'Tree',          icon: '🌳', img: 'assets/cats/tree.png' },
-  { id: 'pothole', label: 'Pothole',       icon: '🕳️', img: 'assets/cats/pothole.png' },
-  { id: 'trail',   label: 'Trail',         icon: '🥾', img: 'assets/cats/trail.png' },
-  { id: 'facility',label: 'Facility',      icon: '🏠', img: 'assets/cats/facility.png' },
-  { id: 'sign',    label: 'Sign',          icon: '🪧', img: 'assets/cats/sign.png' },
-  { id: 'trash',   label: 'Trash',         icon: '🗑️', img: 'assets/cats/trash.png' },
-  { id: 'water',   label: 'Water',         icon: '💧', img: 'assets/cats/water.png' },
-  { id: 'animal',  label: 'Animal rescue', icon: '🦌', img: 'assets/cats/animal.png' },
-  { id: 'other',   label: 'Other',         icon: '📋', img: 'assets/cats/other.png' }
+  { id: 'tree',    label: 'Tree',          icon: '🌳', img: 'assets/cats/tree.png',
+    tools: ['Chainsaw', 'Fuel mix', 'Bar oil', 'Wedges', 'Rope', 'Loppers', 'Work gloves'] },
+  { id: 'pothole', label: 'Pothole',       icon: '🕳️', img: 'assets/cats/pothole.png',
+    tools: ['Cold patch', 'Tamper', 'Shovel', 'Broom'] },
+  { id: 'trail',   label: 'Trail',         icon: '🥾', img: 'assets/cats/trail.png',
+    tools: ['Loppers', 'Hand saw', 'Rake', 'Weed eater'] },
+  { id: 'facility',label: 'Facility',      icon: '🏠', img: 'assets/cats/facility.png',
+    tools: ['Tool kit', 'Drill', 'Ladder', 'Cleaning supplies'] },
+  { id: 'sign',    label: 'Sign',          icon: '🪧', img: 'assets/cats/sign.png',
+    tools: ['Post driver', 'Drill', 'Level', 'Concrete mix', 'Bolts'] },
+  { id: 'trash',   label: 'Trash',         icon: '🗑️', img: 'assets/cats/trash.png',
+    tools: ['Trash bags', 'Gloves', 'Grabber'] },
+  { id: 'water',   label: 'Water',         icon: '💧', img: 'assets/cats/water.png',
+    tools: ['Shovel', 'Waders', 'Pump', 'Culvert pipe'] },
+  { id: 'animal',  label: 'Animal rescue', icon: '🦌', img: 'assets/cats/animal.png',
+    tools: ['Catch pole', 'Live trap', 'Gloves', 'Carrier'] },
+  /* 2026-09-20: five more from Tanner's research ask — parks + cemetery coverage */
+  { id: 'vandalism', label: 'Vandalism',   icon: '🖌️', img: 'assets/cats/vandalism.png',
+    tools: ['Paint & primer', 'Roller & brushes', 'Scraper', 'Graffiti remover'] },
+  { id: 'mowing',  label: 'Mowing',        icon: '🌱', img: 'assets/cats/mowing.png',
+    tools: ['Mower', 'Fuel', 'String trimmer', 'Blower'] },
+  { id: 'lighting',label: 'Lighting',      icon: '💡', img: 'assets/cats/lighting.png',
+    tools: ['Replacement bulbs', 'Ladder', 'Voltage tester'] },
+  { id: 'fence',   label: 'Fence',         icon: '🧱', img: 'assets/cats/fence.png',
+    tools: ['Post driver', 'Posts', 'Concrete mix', 'Level'] },
+  { id: 'headstone', label: 'Headstone',   icon: '🪦', img: 'assets/cats/headstone.png',
+    tools: ['Shovel', 'Gravel', 'Level', 'Lift straps', 'Stone epoxy'] },
+  { id: 'other',   label: 'Other',         icon: '📋', img: 'assets/cats/other.png',
+    tools: [] }
 ];
 /* Silhouette icon for the big buttons and thumbnails — falls back to the
  * emoji when the art file is missing, so text contexts stay readable. */
@@ -143,6 +163,23 @@ function catById(id) {
   for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].id === id) return CATEGORIES[i];
   return { id: 'other', label: 'Other', icon: '📋' };
 }
+/* Per-org category toggles (Tanner 2026-09-20): More -> Issue categories.
+ * DB.catOff = { orgId: [disabledIds] }. Absence means enabled — new
+ * categories and old installs default to on. Only gates the Report tab;
+ * existing reports for a disabled category stay visible everywhere. */
+function catEnabled(id) {
+  var off = (DB.catOff && DB.catOff[DB.orgId]) || [];
+  return off.indexOf(id) === -1;
+}
+function setCatEnabled(id, on) {
+  Store.mutate(function (db) {
+    if (!db.catOff || typeof db.catOff !== 'object') db.catOff = {};
+    var off = db.catOff[db.orgId] || (db.catOff[db.orgId] = []);
+    var i = off.indexOf(id);
+    if (on && i !== -1) off.splice(i, 1);
+    if (!on && i === -1) off.push(id);
+  });
+}
 function parkById(id) {
   for (var i = 0; i < DB.parks.length; i++) if (DB.parks[i].id === id) return DB.parks[i];
   return null;
@@ -204,6 +241,8 @@ var Store = {
     }
     /* 2026-09-20: crew wages landed after existing installs — older DBs lack it. */
     if (!Array.isArray(DB.crew)) DB.crew = [];
+    /* 2026-09-20: per-org category toggles — older DBs lack the map. */
+    if (!DB.catOff || typeof DB.catOff !== 'object') DB.catOff = {};
     /* 2026-09-20: priorities renamed routine/high/critical -> low/medium/high.
      * Map legacy values so existing reports keep their rank — never drop one. */
     var PRI_LEGACY = { routine: 'low', high: 'medium', critical: 'high' };
@@ -1012,7 +1051,12 @@ function mapBindGestures() {
 function renderCategoryGrid() {
   var grid = document.getElementById('category-grid');
   grid.innerHTML = '';
-  CATEGORIES.forEach(function (c) {
+  var shown = CATEGORIES.filter(function (c) { return catEnabled(c.id); });
+  if (!shown.length) {
+    grid.innerHTML = '<p class="hint" style="grid-column:1/-1">Every issue category is turned off. Switch some back on under More → Issue categories.</p>';
+    return;
+  }
+  shown.forEach(function (c) {
     var b = document.createElement('button');
     b.className = 'cat-btn';
     b.innerHTML = '<span class="cat-icon">' + catIcon(c) + '</span><span>' + esc(c.label) + '</span>';
@@ -1048,6 +1092,18 @@ function openReportSheet(cat) {
   document.getElementById('sr-notes').value = '';
   /* priority picker: nothing selected until the crew taps one (required) */
   document.querySelectorAll('#sr-pri-row .sr-pri-btn').forEach(function (b) { b.classList.remove('on'); });
+  /* tool suggestions for this category — tap to mark what you're bringing */
+  var toolsWrap = document.getElementById('sr-tools-wrap');
+  var toolsBox = document.getElementById('sr-tools');
+  toolsBox.innerHTML = '';
+  var sug = cat.tools || [];
+  toolsWrap.hidden = !sug.length;
+  sug.forEach(function (t) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'tool-chip'; b.textContent = t;
+    b.addEventListener('click', function () { b.classList.toggle('on'); });
+    toolsBox.appendChild(b);
+  });
   document.getElementById('sr-photo-preview').hidden = true;
   document.getElementById('sr-photo-preview').removeAttribute('src');
   var st = document.getElementById('sr-gps-status');
@@ -1116,6 +1172,8 @@ function sendReport() {
   var priBtn = document.querySelector('#sr-pri-row .sr-pri-btn.on');
   if (!priBtn) { toast('Pick a priority first — low, medium, or high.'); return; }
   var pri = priBtn.getAttribute('data-pri');
+  var tools = [];
+  document.querySelectorAll('#sr-tools .tool-chip.on').forEach(function (b) { tools.push(b.textContent); });
   var cat = catById(sheetState.category);
   var r = {
     id: uid(),
@@ -1129,6 +1187,7 @@ function sendReport() {
     photo: sheetState.photo,
     crewUrgent: pri === 'high',
     priority: pri,
+    tools: tools,
     status: 'reported',
     assignee: '', dueDate: '',
     costing: null,
@@ -1276,6 +1335,7 @@ function renderDetail() {
   h += '<div class="kv"><span class="k">Reported by</span><span class="v">' + esc(r.reporter) + '</span></div>';
   h += '<div class="kv"><span class="k">Reported</span><span class="v">' + fmtDateTime(r.createdAt) + '</span></div>';
   if (r.note) h += '<div class="kv"><span class="k">Notes</span><span class="v">' + esc(r.note) + '</span></div>';
+  if (r.tools && r.tools.length) h += '<div class="kv"><span class="k">Tools</span><span class="v">🧰 ' + esc(r.tools.join(', ')) + '</span></div>';
   if (r.assignee) h += '<div class="kv"><span class="k">Assigned to</span><span class="v">' + esc(r.assignee) + '</span></div>';
   if (r.dueDate) h += '<div class="kv"><span class="k">Due</span><span class="v">' + esc(r.dueDate) + '</span></div>';
 
@@ -1720,6 +1780,32 @@ function renderMore() {
       renderMore();
     });
   });
+
+  /* issue category toggles — per-org, Report tab only */
+  var tl = document.getElementById('cat-toggle-list');
+  tl.innerHTML = '';
+  CATEGORIES.forEach(function (c) {
+    var row = document.createElement('label');
+    row.className = 'cat-toggle-row';
+    var on = catEnabled(c.id);
+    row.innerHTML = '<span class="cat-toggle-icon">' + catIcon(c) + '</span>' +
+      '<span class="nm">' + esc(c.label) + '</span>' +
+      '<input type="checkbox" data-cat-toggle="' + c.id + '"' + (on ? ' checked' : '') + ' aria-label="Show ' + esc(c.label) + ' on the Report tab">';
+    tl.appendChild(row);
+  });
+  tl.querySelectorAll('[data-cat-toggle]').forEach(function (inp) {
+    inp.addEventListener('change', function () {
+      setCatEnabled(inp.getAttribute('data-cat-toggle'), inp.checked);
+      renderCategoryGrid();
+      toast(inp.checked ? 'Category switched on.' : 'Category switched off.');
+    });
+  });
+  document.getElementById('btn-cats-enable-all').onclick = function () {
+    Store.mutate(function (db) { db.catOff[db.orgId] = []; });
+    renderMore();
+    renderCategoryGrid();
+    toast('All categories switched on.');
+  };
 }
 
 function renderAll() {
