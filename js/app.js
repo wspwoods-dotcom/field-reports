@@ -525,6 +525,12 @@ function fieldMapBounds(org) {
   return L.latLngBounds([[b.minLat, b.minLon], [b.maxLat, b.maxLon]]);
 }
 
+/* Tanner 2026-09-20: open one zoom step closer than the full-county fit. */
+function frameCounty(org) {
+  frMap.fitBounds(fieldMapBounds(org).pad(0.02));
+  frMap.setZoom(Math.min(frMap.getZoom() + 1, frMap.getMaxZoom()));
+}
+
 function initFieldMap(org) {
   if (frMap) {
     /* holder was display:none while another tab was up — re-measure */
@@ -549,7 +555,7 @@ function initFieldMap(org) {
   frMap.on('click', function (e) {
     if (frPinArmed && e && e.latlng) frStartPlacePin(e.latlng.lat, e.latlng.lng);
   });
-  frMap.fitBounds(fieldMapBounds(org).pad(0.08));
+  frameCounty(org);
   frMapOrg = org.id;
 }
 
@@ -559,7 +565,7 @@ function refreshFieldMap(org) {
   if (!frMap || !frOverlay) return;
   if (frMapOrg !== org.id) { /* org changed -> reframe on its boundary */
     frMapOrg = org.id;
-    frMap.fitBounds(fieldMapBounds(org).pad(0.08));
+    frameCounty(org);
   }
   frOverlay.clearLayers();
   /* Greene County boundary outline (TIGER/Line 2025 - overlay only) */
@@ -589,8 +595,6 @@ function refreshFieldMap(org) {
       fillColor: PRI_FILL[r.priority] || '#8a8a7a', fillOpacity: 0.95
     }).bindTooltip(label));
   });
-  document.getElementById('map-counts').textContent =
-    nParks + ' areas with coordinates \u00b7 ' + n + ' reports with GPS';
 }
 
 /* Crosshair locate, Opossum Foot concept: tap to locate, tap again to
@@ -867,9 +871,6 @@ function renderSvgMap() {
   mapApply();
   mapDrawYou();
   mapBindGestures();
-  var n = reports.filter(function (r) { return r.lat != null; }).length;
-  document.getElementById('map-counts').textContent =
-    parks.length + ' areas with coordinates · ' + n + ' reports with GPS';
 }
 
 /* ----- offline fallback: SVG sketch gestures (Leaflet failed to load) -----
