@@ -98,7 +98,7 @@ var DEFAULT_PARKS = [
   { id: 'p-hobart',     name: 'Hobart Wildlife Area',               lat: 42.09642,  lon: -94.57594 },
   { id: 'p-horseshoe',  name: 'Horseshoe Bend Wildlife Area',       lat: 42.11482,  lon: -94.60101 },
   { id: 'p-hyde',       name: 'Hyde Park',                          lat: 42.11303,  lon: -94.57273 },
-  { id: 'p-mcmahon',    name: 'McMahon Access',                     lat: 42.02233,  lon: -94.47510 },
+  { id: 'p-mcmahon',    name: 'McMahon Access',                     lat: 42.03832,  lon: -94.47955 },
   { id: 'p-depot',      name: 'Milwaukee Train Depot',              lat: 42.01493,  lon: -94.36824 },
   { id: 'p-pound',      name: 'Pound Pits Wildlife Area',           lat: 42.07379,  lon: -94.24635 },
   { id: 'p-rrvt',       name: 'Raccoon River Valley Trail',         lat: 42.01475,  lon: -94.36788, approx: true },
