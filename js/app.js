@@ -704,7 +704,7 @@ function initFieldMap(org) {
   frMapOrg = org.id;
 }
 
-var PRI_FILL = { high: '#e05252', medium: '#e8a020', low: '#7fb069' };
+var PRI_FILL = { high: '#e05252', medium: '#f2c230', low: '#7fb069' };
 
 /* Tanner 2026-09-21: area markers are icons, not dots — swing set for parks,
  * tree for wildlife areas, flower for prairies. The type is derived from the
@@ -749,7 +749,14 @@ function refreshFieldMap(org) {
     if (p.lat == null || p.lon == null) return;
     if (showTrail && p.id === 'p-rrvt') return;
     nParks++;
-    var aIcon = L.icon({ iconUrl: AREA_ICONS[areaType(p)], iconSize: [30, 30], iconAnchor: [15, 15] });
+    /* Tanner 2026-09-21: cream glyphs wash out on the light street basemap, so
+     * each area icon rides on a dark disc with a brass ring — readable on
+     * both street and satellite. */
+    var aIcon = L.divIcon({
+      className: 'area-badge-wrap',
+      html: '<span class="area-badge"><img src="' + AREA_ICONS[areaType(p)] + '" alt=""></span>',
+      iconSize: [34, 34], iconAnchor: [17, 17]
+    });
     frOverlay.addLayer(L.marker([p.lat, p.lon], { icon: aIcon })
       .bindTooltip(p.name + (p.approx ? ' (approximate location)' : '')));
   });
