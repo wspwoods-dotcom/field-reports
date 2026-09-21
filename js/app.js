@@ -246,6 +246,13 @@ var Store = {
     if (!Array.isArray(DB.crew)) DB.crew = [];
     /* 2026-09-20: per-org category toggles — older DBs lack the map. */
     if (!DB.catOff || typeof DB.catOff !== 'object') DB.catOff = {};
+    /* 2026-09-21: incident/FEMA mode — older DBs lack these tables. */
+    if (!Array.isArray(DB.incidents)) DB.incidents = [];
+    if (!Array.isArray(DB.incidentLogs)) DB.incidentLogs = [];
+    if (DB.activeIncidentId === undefined) DB.activeIncidentId = '';
+    if (Array.isArray(DB.reports)) {
+      DB.reports.forEach(function (r) { if (r.incidentId === undefined) r.incidentId = ''; });
+    }
     /* 2026-09-20: priorities renamed routine/high/critical -> low/medium/high.
      * Map legacy values so existing reports keep their rank — never drop one. */
     var PRI_LEGACY = { routine: 'low', high: 'medium', critical: 'high' };
@@ -524,6 +531,7 @@ function showView(id) {
   if (id === 'view-board') renderBoard();
   if (id === 'view-map') renderMap();
   if (id === 'view-savings') renderSavings();
+  if (id === 'view-incident') renderIncident();
   if (id === 'view-more') renderMore();
   window.scrollTo(0, 0);
 }
@@ -557,6 +565,10 @@ function updateOrgChrome() {
   /* emergency SOS: visible only when the org has a number configured */
   var sos = document.getElementById('sos-btn');
   if (sos) sos.hidden = !(org.emergency && org.emergency.phone);
+  /* incident/FEMA mode is org-toggleable — hide the tab when the org lacks it */
+  var itab = document.querySelector('.tab[data-view="view-incident"]');
+  if (itab) itab.hidden = !org.incidentModule;
+  if (currentView === 'view-incident' && !org.incidentModule) showView('view-map');
 }
 
 /* ---------- emergency SOS ----------
@@ -1353,13 +1365,16 @@ function sendReport() {
     status: 'reported',
     assignee: '', dueDate: '',
     costing: null,
+    incidentId: DB.activeIncidentId || '', /* 2026-09-21: auto-tag to the active incident */
     syncState: 'local',
     demo: false
   };
   Store.mutate(function (db) { db.reports.unshift(r); });
   closeReportSheet();
   frClearPin(); /* the dropped pin served its report */
-  toast(pri === 'high' ? '🔴 High-priority report saved on this phone.' : 'Report saved on this phone.');
+  var ai = activeIncident();
+  toast(r.incidentId && ai ? 'Report saved — tagged to “' + ai.name + '”.'
+    : pri === 'high' ? '🔴 High-priority report saved on this phone.' : 'Report saved on this phone.');
 }
 
 /* ---------- board (dashboard) ---------- */
@@ -1865,6 +1880,422 @@ function exportJobsCSV() {
   toast('Jobs CSV downloaded.');
 }
 
+/* ---------- incident / FEMA mode ----------
+ * Tanner 2026-09-21: incident tab. Create/select an incident (name,
+ * declaration number, date range); the active incident auto-tags new
+ * reports; labor / equipment / materials / contract / admin-time (DAC) /
+ * equipment-purchase costs log against it. Org-toggleable via
+ * org.incidentModule. The formal FEMA export package ships after current
+ * federal forms are verified — the CSV here is a plain summary, not a
+ * FEMA form. */
+var incSelId = '';
+var incPane = 'reports';
+var incFormOpen = false;
+var incEditId = '';
+var incCostKind = 'labor';
+var incidentMap = null;
+
+var INCIDENT_KINDS = {
+  labor: 'Labor',
+  equipment: 'Equipment',
+  materials: 'Materials',
+  contract: 'Contract',
+  admin: 'Admin time (DAC)',
+  purchase: 'Equipment purchase'
+};
+var DAC_TASKS = ['Surveying damage sites', 'Damage descriptions', 'Worksheet review', 'Correspondence', 'Filing claim documents', 'Other'];
+
+function incidentById(id) {
+  for (var i = 0; i < DB.incidents.length; i++) if (DB.incidents[i].id === id) return DB.incidents[i];
+  return null;
+}
+function activeIncident() { return incidentById(DB.activeIncidentId); }
+function incidentReports(incId) {
+  return DB.reports.filter(function (r) { return r.incidentId === incId; });
+}
+function incidentLogs(incId) {
+  return DB.incidentLogs.filter(function (l) { return l.incidentId === incId; });
+}
+function crewWageByName(name) {
+  name = String(name || '').trim().toLowerCase();
+  if (!name) return null;
+  for (var i = 0; i < DB.crew.length; i++) {
+    if (String(DB.crew[i].name).trim().toLowerCase() === name) return DB.crew[i].wage;
+  }
+  return null;
+}
+function incNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function incSel() {
+  var inc = incidentById(incSelId) || activeIncident() || DB.incidents[0] || null;
+  incSelId = inc ? inc.id : '';
+  return inc;
+}
+function incVal(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+function renderIncident() {
+  if (incidentMap) { try { incidentMap.remove(); } catch (e) {} incidentMap = null; }
+  var body = document.getElementById('incident-body');
+  if (!body) return;
+  if (!DB.incidents.length) {
+    body.innerHTML =
+      '<div class="card"><h2>No incidents yet</h2>' +
+      '<p class="hint">When a storm or disaster hits, create an incident here. Reports filed while it is active get tagged to it automatically, and every cost you log lands on the incident.</p>' +
+      '<div class="btn-row"><button class="btn" data-act="inc-new">＋ New incident</button></div>' +
+      (incFormOpen ? incFormHtml(null) : '') + '</div>';
+    return;
+  }
+  var inc = incSel();
+  var h = '<div class="card"><div class="btn-row">' +
+    '<select id="inc-select" data-chg="inc-select" aria-label="Incident">' +
+    DB.incidents.map(function (x) {
+      return '<option value="' + x.id + '"' + (x.id === inc.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+    }).join('') + '</select>' +
+    '<button class="btn" data-act="inc-new">＋ New</button></div>' +
+    (incFormOpen ? incFormHtml(incEditId ? incidentById(incEditId) : null) : '') + '</div>';
+
+  var isActive = DB.activeIncidentId === inc.id;
+  h += '<div class="card"><h2>' + esc(inc.name) + '</h2>' +
+    '<p class="hint">' +
+    (inc.declNo ? 'Declaration <b>' + esc(inc.declNo) + '</b> · ' : '') +
+    (inc.startDate ? esc(inc.startDate) : '?') + ' to ' + (inc.endDate ? esc(inc.endDate) : '?') +
+    (inc.notes ? '<br>' + esc(inc.notes) : '') + '</p>' +
+    '<div class="btn-row">' +
+    (isActive ? '<span class="badge high">Active — new reports tag here</span>'
+              : '<button class="btn small" data-act="inc-activate">Set active</button>') +
+    '<button class="btn small" data-act="inc-edit">Edit</button>' +
+    '<button class="btn small danger" data-act="inc-delete">Delete</button></div></div>';
+
+  var reps = incidentReports(inc.id);
+  var logs = incidentLogs(inc.id);
+  var laborHrs = 0, total = 0;
+  logs.forEach(function (l) {
+    total += incNum(l.amount);
+    if (l.kind === 'labor') laborHrs += incNum(l.regHrs) + incNum(l.otHrs);
+    if (l.kind === 'admin') laborHrs += incNum(l.hours);
+  });
+  h += '<div class="stat-cards">' +
+    '<div class="stat-card"><span class="stat-label">Reports tagged</span><span class="stat-value">' + reps.length + '</span></div>' +
+    '<div class="stat-card"><span class="stat-label">Labor hours</span><span class="stat-value">' + (Math.round(laborHrs * 10) / 10) + '</span></div>' +
+    '<div class="stat-card"><span class="stat-label">Cost lines</span><span class="stat-value">' + logs.length + '</span></div>' +
+    '<div class="stat-card highlight"><span class="stat-label">Total cost</span><span class="stat-value">' + fmtMoney(total) + '</span></div></div>';
+
+  h += '<div class="subnav">' +
+    ['reports', 'costs', 'map'].map(function (p) {
+      return '<button class="btn small' + (incPane === p ? ' on' : '') + '" data-act="inc-pane" data-pane="' + p + '">' +
+        (p === 'reports' ? 'Reports' : p === 'costs' ? 'Log costs' : 'Map') + '</button>';
+    }).join('') + '</div>';
+
+  if (incPane === 'reports') h += incReportsHtml(inc, reps);
+  else if (incPane === 'costs') h += incCostsHtml(inc, logs);
+  else h += '<div class="card"><div id="incident-map" class="incident-map"></div>' +
+    '<p class="hint">Damage sites tagged to this incident.' + (reps.length ? '' : ' None tagged yet.') + '</p></div>';
+
+  body.innerHTML = h;
+  if (incPane === 'map') setTimeout(function () { incDrawMap(inc); }, 30);
+}
+
+function incFormHtml(inc) {
+  inc = inc || {};
+  return '<div class="incident-form-grid" style="margin-top:10px">' +
+    '<input type="text" id="inc-f-name" class="full" placeholder="Incident name — e.g. July windstorm" value="' + esc(inc.name || '') + '">' +
+    '<input type="text" id="inc-f-decl" placeholder="Declaration # (optional)" value="' + esc(inc.declNo || '') + '">' +
+    '<input type="text" id="inc-f-notes" class="full" placeholder="Notes (optional)" value="' + esc(inc.notes || '') + '">' +
+    '<label class="field-label">Start date<input type="date" id="inc-f-start" value="' + esc(inc.startDate || '') + '"></label>' +
+    '<label class="field-label">End date<input type="date" id="inc-f-end" value="' + esc(inc.endDate || '') + '"></label>' +
+    '</div><div class="btn-row" style="margin-top:8px">' +
+    '<button class="btn small" data-act="inc-save">' + (inc.id ? 'Save' : 'Create incident') + '</button>' +
+    '<button class="btn small" data-act="inc-cancel">Cancel</button></div>';
+}
+
+function incReportsHtml(inc, reps) {
+  var h = '<div class="card"><h2>Tagged reports</h2>';
+  if (!reps.length) {
+    h += '<p class="hint">No reports tagged yet. File reports while this incident is active and they land here automatically.</p>';
+  } else {
+    h += '<div class="board-list">' + reps.map(function (r) {
+      var cat = catById(r.category);
+      var park = r.parkId ? parkById(r.parkId) : null;
+      return '<div class="log-row"><div class="log-main">' +
+        '<div class="log-title">' + esc(cat ? cat.label : r.category) + '</div>' +
+        '<div class="log-sub">' + esc(park ? park.name : 'No park') + ' · ' + fmtDate(r.createdAt) +
+        (r.note ? ' · ' + esc(r.note.slice(0, 80)) : '') + '</div></div>' +
+        '<button class="btn small log-del" data-act="inc-untag" data-id="' + r.id + '">Untag</button></div>';
+    }).join('') + '</div>';
+  }
+  var untagged = DB.reports.filter(function (r) { return !r.incidentId; }).slice(0, 60);
+  if (untagged.length) {
+    h += '<div class="add-row" style="margin-top:10px"><select id="inc-tag-sel" aria-label="Report to tag">' +
+      untagged.map(function (r) {
+        var cat = catById(r.category);
+        return '<option value="' + r.id + '">' + esc((cat ? cat.label : '?') + ' · ' + fmtDate(r.createdAt)) + '</option>';
+      }).join('') + '</select>' +
+      '<button class="btn small" data-act="inc-tag">Tag report</button></div>';
+  }
+  return h + '</div>';
+}
+
+function incCostFields() {
+  var k = incCostKind;
+  function fld(id, label, type, ph) {
+    return '<label class="field-label">' + label + '<input type="' + (type || 'text') + '" id="' + id + '"' +
+      (ph ? ' placeholder="' + ph + '"' : '') + (type === 'number' ? ' step="any" min="0"' : '') + '></label>';
+  }
+  var h = '<label class="field-label full">Date<input type="date" id="inc-c-date" value="' + new Date().toISOString().slice(0, 10) + '"></label>';
+  if (k === 'labor') {
+    h += fld('inc-c-person', 'Person', 'text', 'Name') +
+      fld('inc-c-reg', 'Regular hours', 'number') + fld('inc-c-ot', 'Overtime hours', 'number') +
+      fld('inc-c-rate', '$/hr loaded rate', 'number') +
+      fld('inc-c-task', 'Work done', 'text', 'e.g. cleared downed limbs');
+  } else if (k === 'equipment') {
+    h += fld('inc-c-label', 'Equipment', 'text', 'e.g. JD 5075E w/ loader') +
+      fld('inc-c-hours', 'Hours', 'number') + fld('inc-c-rate', '$/hr', 'number') +
+      fld('inc-c-operator', 'Operator', 'text', 'Name');
+  } else if (k === 'materials') {
+    h += fld('inc-c-desc', 'Material', 'text', 'e.g. gravel') +
+      fld('inc-c-qty', 'Quantity', 'number') + fld('inc-c-unit', '$/unit', 'number');
+  } else if (k === 'contract') {
+    h += fld('inc-c-vendor', 'Vendor', 'text') + fld('inc-c-amount', 'Amount $', 'number') +
+      fld('inc-c-desc', 'Work performed', 'text') + fld('inc-c-ref', 'Invoice ref (optional)', 'text');
+  } else if (k === 'admin') {
+    h += fld('inc-c-person', 'Person', 'text', 'Name') +
+      '<label class="field-label">Task<select id="inc-c-task">' +
+      DAC_TASKS.map(function (t) { return '<option>' + t + '</option>'; }).join('') + '</select></label>' +
+      fld('inc-c-hours', 'Hours', 'number') + fld('inc-c-rate', '$/hr loaded rate', 'number') +
+      fld('inc-c-position', 'Position/skill (optional)', 'text');
+  } else if (k === 'purchase') {
+    h += fld('inc-c-item', 'Item', 'text', 'e.g. 16" chainsaw') +
+      fld('inc-c-vendor', 'Vendor', 'text') + fld('inc-c-price', 'Price $', 'number') +
+      fld('inc-c-lease', 'Lease quote for comparison $', 'number') +
+      '<label class="field-label">In service date<input type="date" id="inc-c-inservice"></label>';
+  }
+  return h;
+}
+
+function incCostsHtml(inc, logs) {
+  var h = '<div class="card"><h2>Log a cost</h2>' +
+    '<label class="field-label">Type<select id="inc-cost-kind" data-chg="inc-cost-kind">' +
+    Object.keys(INCIDENT_KINDS).map(function (k) {
+      return '<option value="' + k + '"' + (k === incCostKind ? ' selected' : '') + '>' + INCIDENT_KINDS[k] + '</option>';
+    }).join('') + '</select></label>' +
+    '<div class="incident-form-grid" id="inc-cost-fields">' + incCostFields() + '</div>' +
+    '<div class="btn-row" style="margin-top:8px"><button class="btn small" data-act="inc-add-cost">Add to incident</button></div></div>';
+  h += '<div class="card"><h2>Cost lines</h2>';
+  if (!logs.length) {
+    h += '<p class="hint">Nothing logged yet.</p>';
+  } else {
+    var sorted = logs.slice().sort(function (a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; });
+    h += '<div class="board-list">' + sorted.map(function (l) {
+      return '<div class="log-row"><div class="log-main">' +
+        '<div class="log-title">' + esc(l.title) + '</div>' +
+        '<div class="log-sub">' + esc(INCIDENT_KINDS[l.kind] || l.kind) + ' · ' + esc(l.sub || '') +
+        (l.date ? ' · ' + esc(l.date) : '') + '</div></div>' +
+        '<span class="log-amt">' + fmtMoney(l.amount) + '</span>' +
+        '<button class="btn small danger log-del" data-act="inc-del-cost" data-id="' + l.id + '">✕</button></div>';
+    }).join('') + '</div>';
+  }
+  h += '<div class="btn-row" style="margin-top:10px"><button class="btn small" data-act="inc-csv">⬇ Incident summary CSV</button></div>' +
+    '<p class="hint">Plain summary for your records — not a FEMA form. The formal FEMA export package is still to come.</p></div>';
+  return h;
+}
+
+function incBuildCost(inc) {
+  var k = incCostKind;
+  var date = incVal('inc-c-date') || new Date().toISOString().slice(0, 10);
+  var base = { id: uid(), incidentId: inc.id, kind: k, date: date, createdAt: Date.now() };
+  function rate(id) {
+    var r = incNum(incVal(id));
+    if (!r) {
+      var w = crewWageByName(incVal('inc-c-person'));
+      if (w != null) r = w;
+    }
+    return r;
+  }
+  if (k === 'labor') {
+    var person = incVal('inc-c-person'), reg = incNum(incVal('inc-c-reg')), ot = incNum(incVal('inc-c-ot'));
+    var rt = rate('inc-c-rate');
+    if (!person || !(reg + ot)) { toast('⚠️ Person and hours are required.'); return null; }
+    if (!rt) { toast('⚠️ Enter an hourly rate (or add them under Crew wages).'); return null; }
+    base.person = person; base.regHrs = reg; base.otHrs = ot; base.rate = rt; base.task = incVal('inc-c-task');
+    base.title = person;
+    base.sub = 'Labor · ' + reg + ' reg' + (ot ? ' + ' + ot + ' OT' : '') + ' hrs' + (base.task ? ' · ' + base.task : '');
+    base.amount = (reg + ot) * rt;
+  } else if (k === 'equipment') {
+    var label = incVal('inc-c-label'), hrs = incNum(incVal('inc-c-hours')), er = incNum(incVal('inc-c-rate'));
+    if (!label || !hrs) { toast('⚠️ Equipment and hours are required.'); return null; }
+    if (!er) { toast('⚠️ Enter an hourly rate.'); return null; }
+    base.label = label; base.hours = hrs; base.rate = er; base.operator = incVal('inc-c-operator');
+    base.title = label;
+    base.sub = 'Equipment · ' + hrs + ' hrs' + (base.operator ? ' · Op: ' + base.operator : '');
+    base.amount = hrs * er;
+  } else if (k === 'materials') {
+    var desc = incVal('inc-c-desc'), qty = incNum(incVal('inc-c-qty')), up = incNum(incVal('inc-c-unit'));
+    if (!desc || !qty) { toast('⚠️ Material and quantity are required.'); return null; }
+    base.desc = desc; base.qty = qty; base.unitPrice = up;
+    base.title = desc;
+    base.sub = 'Materials · ' + qty + ' × ' + fmtMoney(up);
+    base.amount = qty * up;
+  } else if (k === 'contract') {
+    var vendor = incVal('inc-c-vendor'), amt = incNum(incVal('inc-c-amount'));
+    if (!vendor || !amt) { toast('⚠️ Vendor and amount are required.'); return null; }
+    base.vendor = vendor; base.amount = amt; base.desc = incVal('inc-c-desc'); base.ref = incVal('inc-c-ref');
+    base.title = vendor + (base.desc ? ' — ' + base.desc : '');
+    base.sub = 'Contract' + (base.ref ? ' · ' + base.ref : '');
+  } else if (k === 'admin') {
+    var ap = incVal('inc-c-person'), ah = incNum(incVal('inc-c-hours')), ar = rate('inc-c-rate');
+    if (!ap || !ah) { toast('⚠️ Person and hours are required.'); return null; }
+    if (!ar) { toast('⚠️ Enter an hourly rate (or add them under Crew wages).'); return null; }
+    base.person = ap; base.position = incVal('inc-c-position'); base.task = incVal('inc-c-task');
+    base.hours = ah; base.rate = ar;
+    base.title = ap;
+    base.sub = 'Admin (DAC) · ' + base.task + ' · ' + ah + ' hrs';
+    base.amount = ah * ar;
+  } else if (k === 'purchase') {
+    var item = incVal('inc-c-item'), price = incNum(incVal('inc-c-price'));
+    if (!item || !price) { toast('⚠️ Item and price are required.'); return null; }
+    base.item = item; base.vendor = incVal('inc-c-vendor'); base.price = price;
+    base.leaseQuote = incNum(incVal('inc-c-lease')); base.inService = incVal('inc-c-inservice');
+    base.title = item;
+    base.sub = 'Purchase' + (base.vendor ? ' · ' + base.vendor : '') +
+      (base.inService ? ' · in service ' + base.inService : '');
+    base.amount = price;
+  }
+  return base;
+}
+
+function incDrawMap(inc) {
+  var el = document.getElementById('incident-map');
+  if (!el || !window.L) return;
+  if (!incidentMap) {
+    incidentMap = L.map(el, { zoomControl: true }).setView([42.04, -94.39], 10);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Esri', maxZoom: 19
+    }).addTo(incidentMap);
+  }
+  var pts = [];
+  incidentReports(inc.id).forEach(function (r) {
+    if (r.lat == null || r.lon == null) return;
+    pts.push([r.lat, r.lon]);
+    var cat = catById(r.category);
+    L.circleMarker([r.lat, r.lon], {
+      radius: 7, color: '#10140c', weight: 1.5,
+      fillColor: PRI_FILL[r.priority] || '#9aa0a6', fillOpacity: 1
+    }).addTo(incidentMap)
+      .bindTooltip(esc(cat ? cat.label : r.category) + ' · ' + fmtDate(r.createdAt));
+  });
+  if (pts.length) incidentMap.fitBounds(pts, { padding: [24, 24] });
+  incidentMap.invalidateSize();
+}
+
+function incExportCSV(inc) {
+  var rows = [['type', 'date', 'description', 'detail', 'hours_or_qty', 'rate', 'amount']];
+  incidentReports(inc.id).forEach(function (r) {
+    var cat = catById(r.category);
+    var park = r.parkId ? parkById(r.parkId) : null;
+    rows.push(['report', fmtDate(r.createdAt), cat ? cat.label : r.category,
+      (park ? park.name : '') + (r.note ? ' — ' + r.note : ''), '', '', '']);
+  });
+  incidentLogs(inc.id).forEach(function (l) {
+    rows.push([l.kind, l.date || '', l.title || '', l.sub || '', '', '', Math.round(l.amount * 100) / 100]);
+  });
+  var csv = rows.map(function (row) {
+    return row.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\n');
+  var slug = inc.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'incident';
+  download('incident-' + slug + '-summary.csv', csv, 'text/csv');
+  toast('Incident summary CSV downloaded.');
+}
+
+function incOnClick(e) {
+  var t = e.target.closest('[data-act]');
+  if (!t) return;
+  var act = t.getAttribute('data-act');
+  var inc = incSel();
+  if (act === 'inc-new') { incFormOpen = true; incEditId = ''; renderIncident(); }
+  else if (act === 'inc-edit') { incFormOpen = true; incEditId = inc ? inc.id : ''; renderIncident(); }
+  else if (act === 'inc-cancel') { incFormOpen = false; incEditId = ''; renderIncident(); }
+  else if (act === 'inc-save') {
+    var name = incVal('inc-f-name');
+    if (!name) { toast('⚠️ Give the incident a name.'); return; }
+    var data = {
+      name: name, declNo: incVal('inc-f-decl'), notes: incVal('inc-f-notes'),
+      startDate: incVal('inc-f-start'), endDate: incVal('inc-f-end')
+    };
+    var wasEdit = !!incEditId;
+    Store.mutate(function (db) {
+      if (incEditId) {
+        var x = null;
+        db.incidents.forEach(function (i) { if (i.id === incEditId) x = i; });
+        if (x) Object.keys(data).forEach(function (k) { x[k] = data[k]; });
+      } else {
+        data.id = uid(); data.createdAt = Date.now();
+        db.incidents.unshift(data);
+        db.activeIncidentId = data.id;
+      }
+    });
+    incFormOpen = false; incEditId = '';
+    toast(wasEdit ? 'Incident updated.' : 'Incident created and set active — new reports tag to it.');
+  }
+  else if (act === 'inc-activate') {
+    if (!inc) return;
+    Store.mutate(function (db) { db.activeIncidentId = inc.id; });
+    toast('“' + inc.name + '” is now the active incident.');
+  }
+  else if (act === 'inc-delete') {
+    if (!inc) return;
+    if (!confirm('Delete “' + inc.name + '”? Its cost lines are removed; tagged reports stay but lose the tag.')) return;
+    Store.mutate(function (db) {
+      db.incidents = db.incidents.filter(function (x) { return x.id !== inc.id; });
+      db.incidentLogs = db.incidentLogs.filter(function (l) { return l.incidentId !== inc.id; });
+      db.reports.forEach(function (r) { if (r.incidentId === inc.id) r.incidentId = ''; });
+      if (db.activeIncidentId === inc.id) db.activeIncidentId = '';
+    });
+    incSelId = '';
+    toast('Incident deleted.');
+  }
+  else if (act === 'inc-pane') { incPane = t.getAttribute('data-pane'); renderIncident(); }
+  else if (act === 'inc-untag') {
+    var rid = t.getAttribute('data-id');
+    Store.mutate(function (db) {
+      db.reports.forEach(function (r) { if (r.id === rid) r.incidentId = ''; });
+    });
+  }
+  else if (act === 'inc-tag') {
+    var sel = document.getElementById('inc-tag-sel');
+    if (!sel || !inc) return;
+    var tagId = sel.value;
+    Store.mutate(function (db) {
+      db.reports.forEach(function (r) { if (r.id === tagId) r.incidentId = inc.id; });
+    });
+    toast('Report tagged to “' + inc.name + '”.');
+  }
+  else if (act === 'inc-add-cost') {
+    if (!inc) return;
+    var entry = incBuildCost(inc);
+    if (!entry) return;
+    Store.mutate(function (db) { db.incidentLogs.unshift(entry); });
+    toast(INCIDENT_KINDS[entry.kind] + ' logged: ' + fmtMoney(entry.amount) + '.');
+  }
+  else if (act === 'inc-del-cost') {
+    var lid = t.getAttribute('data-id');
+    Store.mutate(function (db) {
+      db.incidentLogs = db.incidentLogs.filter(function (l) { return l.id !== lid; });
+    });
+  }
+  else if (act === 'inc-csv') { if (inc) incExportCSV(inc); }
+}
+
+function incOnChange(e) {
+  var t = e.target.closest('[data-chg]');
+  if (!t) return;
+  var chg = t.getAttribute('data-chg');
+  if (chg === 'inc-select') { incSelId = t.value; renderIncident(); }
+  else if (chg === 'inc-cost-kind') {
+    incCostKind = t.value;
+    var f = document.getElementById('inc-cost-fields');
+    if (f) f.innerHTML = incCostFields();
+  }
+}
+
 /* ---------- more view ---------- */
 function renderMore() {
   document.getElementById('staff-name').value = DB.staffName || '';
@@ -1978,6 +2409,7 @@ function renderAll() {
   if (currentView === 'view-board') renderBoard();
   if (currentView === 'view-map') renderMap();
   if (currentView === 'view-savings') renderSavings();
+  if (currentView === 'view-incident') renderIncident();
   if (currentView === 'view-more') renderMore();
   if (detailId) renderDetail();
 }
@@ -2069,7 +2501,9 @@ function init() {
     document.getElementById(id).addEventListener('change', renderSavings);
   });
   document.getElementById('btn-csv').addEventListener('click', exportJobsCSV);
-  document.getElementById('btn-json').addEventListener('click', function () {
+  /* incident tab: one delegated listener pair for its dynamic content */
+  document.getElementById('incident-body').addEventListener('click', incOnClick);
+  document.getElementById('incident-body').addEventListener('change', incOnChange);  document.getElementById('btn-json').addEventListener('click', function () {
     download('field-reports-all-data.json', JSON.stringify(DB, null, 2), 'application/json');
     toast('Full data JSON downloaded.');
   });

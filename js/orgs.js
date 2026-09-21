@@ -34,7 +34,9 @@ var ORGS = [
      * in the header. The button stays hidden until a phone number is set —
      * send Ranger Joe's number and it appears. show911 adds the 911 row to
      * the confirm sheet when he's ready ("eventually 911"). */
-    emergency: { name: 'Ranger Joe', phone: '', show911: false }
+    emergency: { name: 'Ranger Joe', phone: '', show911: false },
+    /* Tanner 2026-09-21: incident/FEMA mode is org-toggleable. Greene gets it. */
+    incidentModule: true
   },
   {
     id: 'jefferson',
