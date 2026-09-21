@@ -5,7 +5,7 @@
  * No user data ever passes through here — reports live in localStorage
  * on the device only. There is no backend in this prototype.
  */
-var SHELL_CACHE = 'field-reports-shell-v16';
+var SHELL_CACHE = 'field-reports-shell-v17';
 var TILE_CACHE = 'field-reports-tiles-v1';
 var MAX_TILES = 400;
 
