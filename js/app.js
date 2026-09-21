@@ -871,15 +871,17 @@ function initFieldMap(org) {
 var PRI_FILL = { high: '#e05252', medium: '#f2c230', low: '#7fb069' };
 
 /* Tanner 2026-09-21: area markers are icons, not dots — swing set for parks,
- * tree for wildlife areas, flower for prairies. The type is derived from the
+ * tree for wildlife areas, flower for prairies, boat ramp for accesses. The type is derived from the
  * name so areas Tanner adds later work too, with no stored field to migrate. */
 var AREA_ICONS = {
   park: 'assets/cats/area-park.png',
   wildlife: 'assets/cats/area-wildlife.png',
-  prairie: 'assets/cats/area-prairie.png'
+  prairie: 'assets/cats/area-prairie.png',
+  access: 'assets/cats/area-access.png'
 };
 function areaType(p) {
   var n = (p.name || '').toLowerCase();
+  if (n.indexOf('access') !== -1) return 'access';
   if (n.indexOf('wildlife area') !== -1) return 'wildlife';
   if (n.indexOf('prairie') !== -1) return 'prairie';
   return 'park';
