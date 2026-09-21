@@ -173,9 +173,9 @@ a.btn { text-decoration: none; display: inline-block; text-align: center; }
   font-weight: 700;
   cursor: pointer;
 }
-.pri-btn[data-pri="routine"].on { border-color: var(--green); background: #24351f; }
-.pri-btn[data-pri="high"].on { border-color: var(--amber); background: #3a2c10; }
-.pri-btn[data-pri="critical"].on { border-color: var(--red); background: #3d1a1a; }
+.pri-btn[data-pri="low"].on { border-color: var(--green); background: #24351f; }
+.pri-btn[data-pri="medium"].on { border-color: var(--amber); background: #3a2c10; }
+.pri-btn[data-pri="high"].on { border-color: var(--red); background: #3d1a1a; }
 
 /* Forms */
 .field-label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -207,12 +207,28 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .notes-row { display: flex; gap: 8px; align-items: stretch; }
 .notes-row textarea { flex: 1; }
 
-.urgent-toggle {
-  display: flex; align-items: center; gap: 10px;
-  background: #2b1a12; border: 1px solid #6b3a1e; border-radius: 12px;
-  padding: 12px; margin-top: 14px; font-weight: 600; cursor: pointer;
+/* Traffic-light priority picker (report sheet) — one must be tapped */
+.req { color: var(--red); }
+.sr-pri-row { display: flex; gap: 10px; margin: 8px 0 4px; }
+.sr-pri-btn {
+  flex: 1;
+  min-height: var(--tap);
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.urgent-toggle input { width: 24px; height: 24px; accent-color: var(--red); }
+.sr-pri-btn .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+.sr-pri-btn[data-pri="low"] .dot { background: var(--green); }
+.sr-pri-btn[data-pri="medium"] .dot { background: var(--amber); }
+.sr-pri-btn[data-pri="high"] .dot { background: var(--red); }
+.sr-pri-btn[data-pri="low"].on { border-color: var(--green); background: #24351f; }
+.sr-pri-btn[data-pri="medium"].on { border-color: var(--amber); background: #3a2c10; }
+.sr-pri-btn[data-pri="high"].on { border-color: var(--red); background: #3d1a1a; }
 
 /* iOS-safe hidden file input (never display:none — iOS ignores the tap) */
 .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -233,8 +249,9 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   font: inherit;
 }
 .report-card:active { background: var(--card2); }
-.report-card.critical { border-left: 5px solid var(--red); }
-.report-card.high { border-left: 5px solid var(--amber); }
+.report-card.high { border-left: 5px solid var(--red); }
+.report-card.medium { border-left: 5px solid var(--amber); }
+.report-card.low { border-left: 5px solid var(--green); }
 .report-thumb {
   width: 64px; height: 64px; border-radius: 10px; object-fit: cover;
   background: var(--card2); border: 1px solid var(--line);
@@ -249,9 +266,9 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px;
   border: 1px solid var(--line); color: var(--muted);
 }
-.badge.critical { background: #3d1a1a; border-color: var(--red); color: #ffb3b3; animation: pulse 1.6s infinite; }
-.badge.high { background: #3a2c10; border-color: var(--amber); color: #ffd97a; }
-.badge.routine { background: #24351f; border-color: var(--green); color: #bfe3b0; }
+.badge.high { background: #3d1a1a; border-color: var(--red); color: #ffb3b3; animation: pulse 1.6s infinite; }
+.badge.medium { background: #3a2c10; border-color: var(--amber); color: #ffd97a; }
+.badge.low { background: #24351f; border-color: var(--green); color: #bfe3b0; }
 .badge.status { background: var(--card2); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
