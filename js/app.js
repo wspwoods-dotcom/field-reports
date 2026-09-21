@@ -38,10 +38,11 @@ function catIcon(cat, cls) {
   return (cat && cat.icon) || '';
 }
 
+/* Traffic-light tiers (Tanner 2026-09-20): green / yellow / red. */
 var PRIORITIES = {
-  routine:  { label: 'Routine',  cls: 'routine' },
-  high:     { label: 'High',     cls: 'high' },
-  critical: { label: 'Critical', cls: 'critical' }
+  low:    { label: 'Low',    cls: 'low' },
+  medium: { label: 'Medium', cls: 'medium' },
+  high:   { label: 'High',   cls: 'high' }
 };
 
 var STATUSES = ['reported', 'triaged', 'assigned', 'fixed', 'verified'];
@@ -203,6 +204,14 @@ var Store = {
     }
     /* 2026-09-20: crew wages landed after existing installs — older DBs lack it. */
     if (!Array.isArray(DB.crew)) DB.crew = [];
+    /* 2026-09-20: priorities renamed routine/high/critical -> low/medium/high.
+     * Map legacy values so existing reports keep their rank — never drop one. */
+    var PRI_LEGACY = { routine: 'low', high: 'medium', critical: 'high' };
+    if (Array.isArray(DB.reports)) {
+      DB.reports.forEach(function (r) {
+        if (PRI_LEGACY[r.priority]) r.priority = PRI_LEGACY[r.priority];
+      });
+    }
     /* 2026-09-20: real park coordinates researched (see DEFAULT_PARKS).
      * Older installs have nulls. Fill blanks from the researched defaults —
      * never touch a park that already has coordinates, which the user may
@@ -288,26 +297,26 @@ function seedDemo() {
     mk({ category: 'tree', reporter: 'Alex R. (demo crew)',
       note: 'Tree down across the campground loop road, blocking both lanes. Needs a saw crew before the weekend.',
       parkId: 'p-trailside', lat: 42.0150, lon: -94.3700,
-      crewUrgent: true, createdAt: now - 2 * H }),
+      crewUrgent: true, priority: 'high', createdAt: now - 2 * H }),
     mk({ category: 'pothole', reporter: 'Sam T. (demo crew)',
       note: 'Pothole opening up at the main entrance, about two feet across and getting bigger with rain.',
       parkId: 'p-spring', lat: 42.0680, lon: -94.2950,
-      priority: 'high', status: 'assigned', assignee: 'Sam T. (demo crew)',
+      priority: 'medium', status: 'assigned', assignee: 'Sam T. (demo crew)',
       dueDate: isoTodayPlus(3), createdAt: now - 1 * D }),
     mk({ category: 'sign', reporter: 'Alex R. (demo crew)',
       note: 'Trailhead sign bent over at the base. Posts look solid — probably straighten and re-set.',
       parkId: 'p-rrvt', lat: 41.9353, lon: -94.3432,
-      priority: 'routine', status: 'triaged', createdAt: now - 2 * D }),
+      priority: 'low', status: 'triaged', createdAt: now - 2 * D }),
     mk({ category: 'trash', reporter: 'Sam T. (demo crew)',
       note: 'Trash overflowing at the shelter after Saturday rentals. Extra pickup needed.',
       parkId: 'p-squirrel', lat: 41.9516, lon: -94.2908,
-      priority: 'routine', status: 'fixed', assignee: 'Sam T. (demo crew)',
+      priority: 'low', status: 'fixed', assignee: 'Sam T. (demo crew)',
       createdAt: now - 3 * D,
       costing: { laborHours: 1.5, equipment: [], materials: 12, closedAt: now - 1 * D } }),
     mk({ category: 'water', reporter: 'Alex R. (demo crew)',
       note: 'Culvert cleared after the rain. Water flowing, ditch re-graded with the tractor.',
       parkId: 'p-seven', lat: 42.0100, lon: -94.3800,
-      priority: 'high', status: 'verified', assignee: 'Alex R. (demo crew)',
+      priority: 'medium', status: 'verified', assignee: 'Alex R. (demo crew)',
       dueDate: isoTodayPlus(-1), createdAt: now - 5 * D,
       costing: { laborHours: 3, equipment: [{ rateId: 'tractor', hours: 1.5 }], materials: 45, closedAt: now - 2 * D } })
   ];
@@ -559,7 +568,7 @@ function initFieldMap(org) {
   frMapOrg = org.id;
 }
 
-var PRI_FILL = { critical: '#e05252', high: '#e8a020', routine: '#7fb069' };
+var PRI_FILL = { high: '#e05252', medium: '#e8a020', low: '#7fb069' };
 
 function refreshFieldMap(org) {
   if (!frMap || !frOverlay) return;
@@ -1037,7 +1046,8 @@ function openReportSheet(cat) {
   fillParkSelect(sel, null);
   document.getElementById('sr-park-hint').hidden = true;
   document.getElementById('sr-notes').value = '';
-  document.getElementById('sr-urgent').checked = false;
+  /* priority picker: nothing selected until the crew taps one (required) */
+  document.querySelectorAll('#sr-pri-row .sr-pri-btn').forEach(function (b) { b.classList.remove('on'); });
   document.getElementById('sr-photo-preview').hidden = true;
   document.getElementById('sr-photo-preview').removeAttribute('src');
   var st = document.getElementById('sr-gps-status');
@@ -1102,7 +1112,10 @@ function sendReport() {
   if (!sheetState) return;
   var parkId = document.getElementById('sr-park').value;
   var notes = document.getElementById('sr-notes').value.trim();
-  var urgent = document.getElementById('sr-urgent').checked;
+  /* Tanner 2026-09-20: traffic-light priority is required — the crew must tap one. */
+  var priBtn = document.querySelector('#sr-pri-row .sr-pri-btn.on');
+  if (!priBtn) { toast('Pick a priority first — low, medium, or high.'); return; }
+  var pri = priBtn.getAttribute('data-pri');
   var cat = catById(sheetState.category);
   var r = {
     id: uid(),
@@ -1114,8 +1127,8 @@ function sendReport() {
     parkId: parkId,
     lat: sheetState.lat, lon: sheetState.lon, gpsAccuracy: sheetState.accuracy,
     photo: sheetState.photo,
-    crewUrgent: urgent,
-    priority: null,
+    crewUrgent: pri === 'high',
+    priority: pri,
     status: 'reported',
     assignee: '', dueDate: '',
     costing: null,
@@ -1125,11 +1138,11 @@ function sendReport() {
   Store.mutate(function (db) { db.reports.unshift(r); });
   closeReportSheet();
   frClearPin(); /* the dropped pin served its report */
-  toast(urgent ? '🚨 Urgent report saved on this phone.' : 'Report saved on this phone.');
+  toast(pri === 'high' ? '🔴 High-priority report saved on this phone.' : 'Report saved on this phone.');
 }
 
 /* ---------- board (dashboard) ---------- */
-var PRI_ORDER = { critical: 0, high: 1, routine: 2 };
+var PRI_ORDER = { high: 0, medium: 1, low: 2 };
 
 function fillFilterParks(sel, keepVal) {
   var val = keepVal !== undefined ? keepVal : sel.value;
@@ -1252,8 +1265,8 @@ function renderDetail() {
        (r.demo ? '<span class="badge">demo data</span>' : '') + '</div>';
   h += statusTimeline(r);
 
-  if (r.priority === 'critical') {
-    h += '<div class="critical-note">🚨 CRITICAL — this is the phone-alert tier. If the crew hasn’t called it in, call them.</div>';
+  if (r.priority === 'high') {
+    h += '<div class="critical-note">🔴 HIGH — this is the phone-alert tier. If the crew hasn\u2019t called it in, call them.</div>';
   }
 
   if (r.photo) h += '<img class="detail-photo" src="' + r.photo + '" alt="Report photo">';
@@ -1269,12 +1282,12 @@ function renderDetail() {
   /* Triage controls */
   h += '<h2 style="margin-top:18px">Triage</h2>';
   h += '<label class="field-label">Priority</label>';
-  h += '<div class="pri-row" id="d-pri-row">' + ['routine', 'high', 'critical'].map(function (p) {
+  h += '<div class="pri-row" id="d-pri-row">' + ['low', 'medium', 'high'].map(function (p) {
     return '<button class="pri-btn' + (r.priority === p ? ' on' : '') + '" data-pri="' + p + '">' + PRIORITIES[p].label + '</button>';
   }).join('') + '</div>';
   h += '<label class="field-label" for="d-assignee">Assignee</label>';
   h += '<input type="text" id="d-assignee" value="' + esc(r.assignee || '') + '" placeholder="Who owns this job?" autocomplete="off">';
-  h += '<label class="field-label" for="d-duedate">Due date' + (r.priority === 'high' ? ' (required for High priority)' : '') + '</label>';
+  h += '<label class="field-label" for="d-duedate">Due date' + (r.priority === 'medium' ? ' (required for Medium priority)' : '') + '</label>';
   h += '<input type="date" id="d-duedate" value="' + esc(r.dueDate || '') + '">';
 
   /* Costing — shown once the job is being closed */
@@ -1373,9 +1386,9 @@ function advanceStatus() {
   if (!r) return;
   var t = readTriageInputs();
   var problems = [];
-  if (r.status === 'reported' && !r.priority) problems.push('Set a priority first (Routine, High, or Critical).');
+  if (r.status === 'reported' && !r.priority) problems.push('Set a priority first (Low, Medium, or High).');
   if (r.status === 'triaged' && !t.assignee) problems.push('Name an assignee before assigning.');
-  if (r.status === 'triaged' && r.priority === 'high' && !t.dueDate) problems.push('High priority jobs need a due date.');
+  if (r.status === 'triaged' && r.priority === 'medium' && !t.dueDate) problems.push('Medium priority jobs need a due date.');
   if (r.status === 'assigned') {
     var c = readCostingForm();
     if (!c) problems.push('Fill in the job costing (labor, at least) before marking fixed.');
@@ -1756,6 +1769,13 @@ function init() {
     if (e.target.id === 'sheet-report') closeReportSheet();
   });
   document.getElementById('sr-send').addEventListener('click', sendReport);
+  /* traffic-light priority picker: one tap selects, required before send */
+  document.querySelectorAll('#sr-pri-row .sr-pri-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#sr-pri-row .sr-pri-btn').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+    });
+  });
 
   /* photo */
   var photoInput = document.getElementById('sr-photo-input');
