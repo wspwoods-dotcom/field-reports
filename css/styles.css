@@ -230,6 +230,32 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .sr-pri-btn[data-pri="medium"].on { border-color: var(--amber); background: #3a2c10; }
 .sr-pri-btn[data-pri="high"].on { border-color: var(--red); background: #3d1a1a; }
 
+/* Tool chips — tap what you're bringing */
+.tool-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.tool-chip {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+}
+.tool-chip.on { border-color: var(--brass); background: #3a2f14; color: #ffe1a1; }
+
+/* Issue category toggles (More view) */
+.cat-toggle-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.cat-toggle-row:last-child { border-bottom: none; }
+.cat-toggle-icon { width: 34px; height: 34px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.cat-toggle-icon .cat-sil { width: 30px; height: 30px; }
+.cat-toggle-row .nm { flex: 1; font-weight: 600; }
+.cat-toggle-row input[type="checkbox"] { width: 28px; height: 28px; accent-color: var(--brass); flex: 0 0 auto; }
+
 /* iOS-safe hidden file input (never display:none — iOS ignores the tap) */
 .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
