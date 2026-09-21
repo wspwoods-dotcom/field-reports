@@ -457,6 +457,21 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 #view-map .map-wrap { flex: 1 1 auto; min-height: 0; display: flex; }
 #view-map .map-holder { flex: 1 1 auto; min-height: 0; height: auto; }
 
+/* Incident view */
+.incident-map { height: 260px; border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+.subnav { display: flex; gap: 6px; margin: 12px 0; }
+.subnav .btn { flex: 1 1 0; }
+.subnav .btn.on { border-color: var(--accent); color: var(--accent); }
+.log-row { display: flex; gap: 10px; align-items: baseline; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.log-row:last-child { border-bottom: none; }
+.log-main { flex: 1 1 auto; min-width: 0; }
+.log-title { font-weight: 700; font-size: 14px; }
+.log-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.log-amt { font-weight: 800; white-space: nowrap; }
+.log-del { flex: 0 0 auto; }
+.incident-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.incident-form-grid .full { grid-column: 1 / -1; }
+
 /* Toast */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
