@@ -97,7 +97,8 @@ var OrgMap = (function () {
     (opts.parks || []).forEach(function (p) {
       if (p.lat == null || p.lon == null) return;
       if (opts.trail && p.id === 'p-rrvt') return; /* the trail line carries it */
-      pins.push({ kind: 'park', lon: p.lon, lat: p.lat, label: p.name + (p.approx ? ' (approximate location)' : '') });
+      pins.push({ kind: 'park', lon: p.lon, lat: p.lat, type: p.type || 'park',
+                  label: p.name + (p.approx ? ' (approximate location)' : '') });
       boxes.push({ minLon: p.lon, minLat: p.lat, maxLon: p.lon, maxLat: p.lat });
     });
     (opts.reports || []).forEach(function (r) {
@@ -129,8 +130,11 @@ var OrgMap = (function () {
       var p = proj(pin.lon, pin.lat);
       var x = p[0].toFixed(1), y = p[1].toFixed(1);
       if (pin.kind === 'park') {
-        s += '<g class="map-park"><circle cx="' + x + '" cy="' + y + '" r="6"/>' +
-             '<text x="' + (parseFloat(x) + 9) + '" y="' + (parseFloat(y) + 4) + '">' +
+        /* area icons, same set as the Leaflet map (Tanner 2026-09-21) */
+        var aImg = 'assets/cats/area-' + (pin.type || 'park') + '.png';
+        s += '<g class="map-park"><image x="' + (parseFloat(x) - 14) + '" y="' + (parseFloat(y) - 14) +
+             '" width="28" height="28" href="' + aImg + '"/>' +
+             '<text x="' + (parseFloat(x) + 17) + '" y="' + (parseFloat(y) + 4) + '">' +
              escXml(pin.label) + '</text><title>' + escXml(pin.label) + '</title></g>';
       } else {
         s += '<circle cx="' + x + '" cy="' + y + '" r="7" class="map-report" fill="' + pin.fill + '">' +
