@@ -922,33 +922,56 @@ function mapDrawPin() {
   g.appendChild(t);
 }
 
-/* One fresh fix from the follow-mode watch: move the dot, glide the map. */
+/* One fresh fix from the follow-mode watch: move the dot on every fix, and
+ * recenter the map only once the dot drifts out of the inner view — no glide
+ * animation, so the map tracks instead of lagging behind. Transient GPS
+ * errors never kill follow; only a permission denial does. */
+var frFollowErrs = 0;
 function frOnFollowFix(pos) {
   var c = pos.coords || {};
   if (typeof c.latitude !== 'number' || typeof c.longitude !== 'number') return;
   var ageMs = Date.now() - (pos.timestamp || 0);
   if (ageMs > 30000 || ageMs < 0) return; /* stale cached fix — ignore it */
+  frFollowErrs = 0;
   frDrawYou(c.latitude, c.longitude);
-  var now = Date.now();
   if (typeof L !== 'undefined' && frMap) {
-    if (now - frFollowLastPan > 1500) { frFollowLastPan = now; frMap.panTo([c.latitude, c.longitude], { animate: true }); }
+    var pt = frMap.latLngToContainerPoint([c.latitude, c.longitude]);
+    var size = frMap.getSize();
+    if (Math.abs(pt.x - size.x / 2) > size.x * 0.28 ||
+        Math.abs(pt.y - size.y / 2) > size.y * 0.28) {
+      frMap.panTo([c.latitude, c.longitude], { animate: false });
+    }
   } else if (MapNav.project) {
-    if (now - frFollowLastPan > 1500) {
-      frFollowLastPan = now;
-      var p = MapNav.project(c.longitude, c.latitude);
+    var p = MapNav.project(c.longitude, c.latitude);
+    var cx = p[0] * MapNav.k + MapNav.tx, cy = p[1] * MapNav.k + MapNav.ty;
+    if (Math.abs(cx - MapNav.W / 2) > MapNav.W * 0.28 ||
+        Math.abs(cy - MapNav.H / 2) > MapNav.H * 0.28) {
       MapNav.tx = MapNav.W / 2 - p[0] * MapNav.k;
       MapNav.ty = MapNav.H / 2 - p[1] * MapNav.k;
       mapApply();
     }
   }
 }
+function frOnFollowError(err) {
+  if (frLocateState !== 'following') return;
+  if (err && err.code === 1) {
+    frStopFollow(true);
+    toast('Location permission denied — follow stopped.');
+    return;
+  }
+  /* iOS fires transient timeouts under tree cover and in dips — ride them out */
+  frFollowErrs++;
+  if (frFollowErrs >= 3) { frFollowErrs = 0; toast('GPS signal weak — still trying.'); }
+}
 
-/* Acquisition: watch the GPS for up to 20 seconds, throw away stale cached
-   fixes (a phone will happily hand back the last fix from somewhere you
-   used to be), and settle on the most accurate fresh fix. */
+/* Acquisition: watch the GPS for up to 45 seconds (a cold iPhone radio often
+   needs 30-60 s for its first high-accuracy fix — 20 s was giving up early),
+   throw away stale cached fixes, and settle on the most accurate fresh fix.
+   Transient errors while the radio warms up are ignored; only a permission
+   denial ends the attempt early. */
 function frStartAcquire() {
   frLocateState = 'acquiring';
-  var best = null, finished = false;
+  var best = null, finished = false, lastToast = 0;
   toast('Acquiring GPS… hold still a moment.');
   hookFrFollowDrag();
 
@@ -961,6 +984,11 @@ function frStartAcquire() {
     if (!best || acc < best.acc) {
       best = { lat: c.latitude, lon: c.longitude, acc: acc };
       frDrawYou(best.lat, best.lon);
+      var now = Date.now();
+      if (now - lastToast > 2500) {
+        lastToast = now;
+        toast('Acquiring GPS… ±' + acc + ' m' + (acc > 50 ? ' — still settling' : ''));
+      }
     }
   }
 
@@ -985,17 +1013,19 @@ function frStartAcquire() {
     toast('Located (±' + best.acc + ' m). Tap the crosshair again to follow.');
   }
 
-  frLocateTimer = setTimeout(finish, 20000);
+  frLocateTimer = setTimeout(finish, 45000);
   try {
     frLocateWatch = navigator.geolocation.watchPosition(function (pos) {
       consider(pos);
       if (best && best.acc <= 8) finish(); /* good enough — stop early */
-    }, function () {
-      if (!best && !finished) {
+    }, function (err) {
+      /* transient iOS timeouts while the radio warms up are normal — keep
+       * waiting; only a permission denial ends the attempt early. */
+      if (err && err.code === 1 && !finished) {
         finished = true; frClearLocateWatch(); frLocateState = 'idle';
-        toast('Could not get a GPS fix. Check location permission.');
+        toast('Location permission denied. Allow it in Settings and try again.');
       }
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }, { enableHighAccuracy: true, timeout: 45000, maximumAge: 0 });
   } catch (e) { finish(); }
 }
 
@@ -1007,9 +1037,8 @@ function frStartFollow() {
   frClearLocateWatch();
   toast('Following you — tap the crosshair again to stop.');
   try {
-    frLocateWatch = navigator.geolocation.watchPosition(frOnFollowFix, function () {
-      if (frLocateState === 'following') { frStopFollow(true); toast('Lost GPS signal.'); }
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    frLocateWatch = navigator.geolocation.watchPosition(frOnFollowFix, frOnFollowError,
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   } catch (e) { frStopFollow(true); }
 }
 
