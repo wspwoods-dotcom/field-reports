@@ -885,6 +885,42 @@ function areaType(p) {
   return 'park';
 }
 
+/* ---------- park parcel boundaries (Beacon/assessor, reference only) ----------
+ * Tanner 2026-09-21: parcel outlines for parks managed by the department, baked
+ * in as a static GeoJSON (assets/park-boundaries.geojson) so they render
+ * offline. Beacon lines are assessment-grade, NOT a survey — every popup says
+ * so, same stance as the TIGER/Line boundary overlays. If the file is missing
+ * or the phone is offline on first load, the map simply renders without it. */
+var parkBoundsGeo = null, parkBoundsLoading = false;
+
+function parkParcelPopup(p) {
+  var name = esc((p && p.name) || 'Park parcel');
+  return '<b>' + name + '</b><br><span class="hint">Parcel lines approximate — ' +
+    'assessment-grade, not a survey.</span>';
+}
+
+function loadParkBoundaries() {
+  if (parkBoundsGeo || parkBoundsLoading || typeof fetch === 'undefined') return;
+  parkBoundsLoading = true;
+  fetch('assets/park-boundaries.geojson').then(function (resp) {
+    if (!resp.ok) throw new Error('no parcel layer');
+    return resp.json();
+  }).then(function (gj) {
+    if (gj && gj.features && gj.features.length) {
+      parkBoundsGeo = gj;
+      if (frMap) refreshFieldMap(currentOrg()); /* re-render with the new layer */
+    }
+  }).catch(function () { /* offline or not baked in yet — map works without it */ });
+}
+
+function addParkBoundaries() {
+  if (!frOverlay || !parkBoundsGeo) return;
+  frOverlay.addLayer(L.geoJSON(parkBoundsGeo, {
+    style: { color: '#d19a2f', weight: 2, opacity: 0.9, dashArray: '5 4', fillColor: '#d19a2f', fillOpacity: 0.05 },
+    onEachFeature: function (f, layer) { layer.bindPopup(parkParcelPopup(f.properties)); }
+  }));
+}
+
 function refreshFieldMap(org) {
   if (!frMap || !frOverlay) return;
   if (frMapOrg !== org.id) { /* org changed -> reframe on its boundary */
@@ -896,6 +932,9 @@ function refreshFieldMap(org) {
   frOverlay.addLayer(L.geoJSON(org.boundary, {
     style: { color: '#d19a2f', weight: 2.5, opacity: 0.9, fillColor: '#d19a2f', fillOpacity: 0.06 }
   }));
+  /* park parcel outlines (Beacon/assessor — assessment-grade, reference only) */
+  loadParkBoundaries();
+  addParkBoundaries();
   /* park area icons (Tanner 2026-09-21: icons replace the dots) */
   var nParks = 0;
   /* Tanner 2026-09-21: draw the actual Raccoon River Valley Trail line, gold
