@@ -145,6 +145,15 @@
       </div>
     </div>
 
+    <h2>Issue categories</h2>
+    <div class="card">
+      <p class="hint">Turn off the issue types your crew doesn't file — they disappear from the Report tab. Old reports stay put wherever they are.</p>
+      <div id="cat-toggle-list"></div>
+      <div class="btn-row">
+        <button id="btn-cats-enable-all" class="btn small">Enable all</button>
+      </div>
+    </div>
+
     <h2>Data</h2>
     <div class="card">
       <div class="btn-row">
@@ -205,6 +214,12 @@
       <button id="sr-mic" class="btn mic" aria-label="Dictate notes">🎤</button>
     </div>
     <p id="sr-mic-status" class="hint" hidden></p>
+
+    <div id="sr-tools-wrap" hidden>
+      <label class="field-label">Tools to bring</label>
+      <div id="sr-tools" class="tool-chips"></div>
+      <p class="hint">Tap what you're taking so nobody forgets it at the shop.</p>
+    </div>
 
     <label class="field-label">Priority <span class="req">*</span></label>
     <div class="sr-pri-row" id="sr-pri-row" role="radiogroup" aria-label="Priority">
