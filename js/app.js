@@ -34,17 +34,20 @@ var CATEGORIES = [
     tools: ['Shovel', 'Waders', 'Pump', 'Culvert pipe'] },
   { id: 'animal',  label: 'Animal rescue', icon: '🦌', img: 'assets/cats/animal.png',
     tools: ['Catch pole', 'Live trap', 'Gloves', 'Carrier'] },
-  /* 2026-09-20: five more from Tanner's research ask — parks + cemetery coverage */
+  /* 2026-09-20: five more from Tanner's research ask — parks + cemetery coverage.
+   * 2026-09-21: Tanner swapped Lighting out for Storm damage; added Cleaning. */
   { id: 'vandalism', label: 'Vandalism',   icon: '🖌️', img: 'assets/cats/vandalism.png',
     tools: ['Paint & primer', 'Roller & brushes', 'Scraper', 'Graffiti remover'] },
   { id: 'mowing',  label: 'Mowing',        icon: '🌱', img: 'assets/cats/mowing.png',
     tools: ['Mower', 'Fuel', 'String trimmer', 'Blower'] },
-  { id: 'lighting',label: 'Lighting',      icon: '💡', img: 'assets/cats/lighting.png',
-    tools: ['Replacement bulbs', 'Ladder', 'Voltage tester'] },
+  { id: 'storm',   label: 'Storm damage',  icon: '⛈️', img: 'assets/cats/storm.png',
+    tools: ['Chainsaw', 'Fuel mix', 'Bar oil', 'Loppers', 'Rake', 'Work gloves'] },
   { id: 'fence',   label: 'Fence',         icon: '🧱', img: 'assets/cats/fence.png',
     tools: ['Post driver', 'Posts', 'Concrete mix', 'Level'] },
   { id: 'headstone', label: 'Headstone',   icon: '🪦', img: 'assets/cats/headstone.png',
     tools: ['Shovel', 'Gravel', 'Level', 'Lift straps', 'Stone epoxy'] },
+  { id: 'cleaning', label: 'Facility cleaning', icon: '🧹', img: 'assets/cats/cleaning.png',
+    tools: ['Cleaning supplies', 'Disinfectant', 'Trash bags', 'Mop & bucket', 'Paper products', 'Gloves'] },
   { id: 'other',   label: 'Other',         icon: '📋', img: 'assets/cats/other.png',
     tools: [] }
 ];
@@ -622,8 +625,20 @@ function refreshFieldMap(org) {
   }));
   /* park area dots */
   var nParks = 0;
+  /* Tanner 2026-09-21: draw the actual Raccoon River Valley Trail line, gold
+   * like the boundary, instead of only a representative dot. The p-rrvt park
+   * record stays in the list (nearest-park still uses it); the line carries
+   * its identity on the map so the dot would just double-label it. */
+  var showTrail = (org.id === 'greene' && typeof RRVT_TRAIL !== 'undefined');
+  if (showTrail) {
+    RRVT_TRAIL.forEach(function (seg) {
+      frOverlay.addLayer(L.polyline(seg, { color: '#d19a2f', weight: 4, opacity: 0.9 })
+        .bindTooltip('Raccoon River Valley Trail'));
+    });
+  }
   DB.parks.forEach(function (p) {
     if (p.lat == null || p.lon == null) return;
+    if (showTrail && p.id === 'p-rrvt') return;
     nParks++;
     frOverlay.addLayer(L.circleMarker([p.lat, p.lon], {
       radius: 6, color: '#0d1008', weight: 1.5, fillColor: '#9ecfff', fillOpacity: 0.95
@@ -910,7 +925,8 @@ function renderSvgMap() {
              (r.priority ? ' (' + r.priority + ')' : '')
     };
   });
-  var f = OrgMap.frame(org, { parks: parks, reports: reports });
+  var f = OrgMap.frame(org, { parks: parks, reports: reports,
+    trail: (org.id === 'greene' && typeof RRVT_TRAIL !== 'undefined') ? RRVT_TRAIL : null });
   MapNav.project = f.project; MapNav.W = f.W; MapNav.H = f.H;
   if (MapNav.orgId !== org.id) { // new org → reset to full view
     MapNav.orgId = org.id; MapNav.k = 1; MapNav.tx = 0; MapNav.ty = 0;

@@ -96,6 +96,7 @@ var OrgMap = (function () {
     var pins = [];
     (opts.parks || []).forEach(function (p) {
       if (p.lat == null || p.lon == null) return;
+      if (opts.trail && p.id === 'p-rrvt') return; /* the trail line carries it */
       pins.push({ kind: 'park', lon: p.lon, lat: p.lat, label: p.name + (p.approx ? ' (approximate location)' : '') });
       boxes.push({ minLon: p.lon, minLat: p.lat, maxLon: p.lon, maxLat: p.lat });
     });
@@ -114,6 +115,16 @@ var OrgMap = (function () {
     s += '<g id="map-zoomlayer">';
     s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" class="map-bg"/>';
     s += '<path d="' + ringPath(ring, proj) + '" class="map-boundary"/>';
+    /* Raccoon River Valley Trail: gold line under the dots, same weight as
+     * the Leaflet layer. Data is [lat, lon] pairs (see js/trail.js). */
+    (opts.trail || []).forEach(function (seg) {
+      var d = '';
+      for (var i = 0; i < seg.length; i++) {
+        var tp = proj(seg[i][1], seg[i][0]);
+        d += (i === 0 ? 'M' : 'L') + tp[0].toFixed(1) + ' ' + tp[1].toFixed(1);
+      }
+      s += '<path d="' + d + '" class="map-trail"><title>Raccoon River Valley Trail</title></path>';
+    });
     pins.forEach(function (pin) {
       var p = proj(pin.lon, pin.lat);
       var x = p[0].toFixed(1), y = p[1].toFixed(1);
