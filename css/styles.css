@@ -47,6 +47,18 @@ body {
 body > .demo-banner, body > .app-header, body > .tabbar { flex: 0 0 auto; }
 #main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
+/* Tanner 2026-09-21: turning the phone sideways stretched everything wide.
+ * iOS Safari cannot lock a web app to portrait, so instead the app keeps
+ * its portrait phone width (centered) whenever the viewport is a short
+ * landscape — the layout never stretches. Desktop landscape is untouched. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body { align-items: center; }
+  body > .demo-banner,
+  body > .app-header,
+  body > #main,
+  body > .tabbar { width: 100%; max-width: 480px; }
+}
+
 /* Demo banner */
 .demo-banner {
   background: #5a3d00;
