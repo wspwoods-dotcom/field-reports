@@ -410,6 +410,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .map-park circle { fill: #9ecfff; stroke: #0d1008; stroke-width: 1.5; }
 .map-park text { fill: var(--muted); font-size: 13px; }
 .map-report { stroke: #0d1008; stroke-width: 1.5; }
+.map-trail { fill: none; stroke: #d19a2f; stroke-width: 4; opacity: 0.9; }
 .map-you { fill: #3b82f6; stroke: #fff; stroke-width: 2.5; }
 .map-ctl {
   position: absolute; right: 10px; bottom: 10px;
