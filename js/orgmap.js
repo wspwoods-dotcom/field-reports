@@ -130,9 +130,11 @@ var OrgMap = (function () {
       var p = proj(pin.lon, pin.lat);
       var x = p[0].toFixed(1), y = p[1].toFixed(1);
       if (pin.kind === 'park') {
-        /* area icons, same set as the Leaflet map (Tanner 2026-09-21) */
+        /* area icons, same set as the Leaflet map (Tanner 2026-09-21);
+         * dark disc + brass ring behind the cream glyph for contrast */
         var aImg = 'assets/cats/area-' + (pin.type || 'park') + '.png';
-        s += '<g class="map-park"><image x="' + (parseFloat(x) - 14) + '" y="' + (parseFloat(y) - 14) +
+        s += '<g class="map-park"><circle cx="' + x + '" cy="' + y + '" r="16" fill="#201b10" stroke="#d19a2f" stroke-width="2"/>' +
+             '<image x="' + (parseFloat(x) - 14) + '" y="' + (parseFloat(y) - 14) +
              '" width="28" height="28" href="' + aImg + '"/>' +
              '<text x="' + (parseFloat(x) + 17) + '" y="' + (parseFloat(y) + 4) + '">' +
              escXml(pin.label) + '</text><title>' + escXml(pin.label) + '</title></g>';
