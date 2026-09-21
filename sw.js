@@ -5,7 +5,7 @@
  * No user data ever passes through here — reports live in localStorage
  * on the device only. There is no backend in this prototype.
  */
-var SHELL_CACHE = 'field-reports-shell-v18';
+var SHELL_CACHE = 'field-reports-shell-v19';
 var TILE_CACHE = 'field-reports-tiles-v1';
 var MAX_TILES = 400;
 
@@ -38,7 +38,8 @@ var SHELL = [
   './assets/cats/other.png',
   './assets/cats/area-park.png',
   './assets/cats/area-wildlife.png',
-  './assets/cats/area-prairie.png'
+  './assets/cats/area-prairie.png',
+  './assets/park-boundaries.geojson'
 ];
 
 var TILE_HOSTS = [
